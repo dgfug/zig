@@ -128,6 +128,7 @@ typedef struct mig_subsystem {
 	    routine[1];                                         /* Routine descriptor array */
 } *mig_subsystem_t;
 
+
 #define MIG_SUBSYSTEM_NULL              ((mig_subsystem_t)0)
 
 typedef struct mig_symtab {
@@ -150,7 +151,6 @@ typedef struct mig_symtab {
 #else
 #define MIG_SERVER_ROUTINE
 #endif
-
 
 __BEGIN_DECLS
 

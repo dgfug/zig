@@ -35,10 +35,10 @@
 extern void __cdecl _initterm(_PVFV *,_PVFV *);
 extern void __main ();
 extern void _pei386_runtime_relocator (void);
-extern _CRTALLOC(".CRT$XIA") _PIFV __xi_a[];
-extern _CRTALLOC(".CRT$XIZ") _PIFV __xi_z[];
-extern _CRTALLOC(".CRT$XCA") _PVFV __xc_a[];
-extern _CRTALLOC(".CRT$XCZ") _PVFV __xc_z[];
+extern _PIFV __xi_a[];
+extern _PIFV __xi_z[];
+extern _PVFV __xc_a[];
+extern _PVFV __xc_z[];
 
 
 /* TLS initialization hook.  */
@@ -48,7 +48,7 @@ static int __proc_attached = 0;
 
 static _onexit_table_t atexit_table;
 
-extern int mingw_app_type;
+extern int __mingw_app_type;
 
 extern WINBOOL WINAPI DllMain (HANDLE hDllHandle, DWORD dwReason, LPVOID lpreserved);
 
@@ -142,10 +142,11 @@ WINBOOL WINAPI DllMainCRTStartup (HANDLE, DWORD, LPVOID);
 int __mingw_init_ehandler (void);
 #endif
 
+__attribute__((used)) /* required due to GNU LD bug: https://sourceware.org/bugzilla/show_bug.cgi?id=30300 */
 WINBOOL WINAPI
 DllMainCRTStartup (HANDLE hDllHandle, DWORD dwReason, LPVOID lpreserved)
 {
-  mingw_app_type = 0;
+  __mingw_app_type = 0;
   if (dwReason == DLL_PROCESS_ATTACH)
     {
 #if defined(__x86_64__) && !defined(__SEH__)

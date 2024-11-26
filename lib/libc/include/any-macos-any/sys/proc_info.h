@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2005-2020 Apple Computer, Inc. All rights reserved.
+ * Copyright (c) 2005-2021 Apple Inc. All rights reserved.
  *
  * @APPLE_OSREFERENCE_LICENSE_HEADER_START@
  *
@@ -44,7 +44,6 @@
 #include <netinet/tcp.h>
 #include <mach/machine.h>
 #include <uuid/uuid.h>
-
 
 __BEGIN_DECLS
 
@@ -98,8 +97,6 @@ struct proc_bsdshortinfo {
 	gid_t                   pbsi_svgid;             /* current svgid on process */
 	uint32_t                pbsi_rfu;               /* reserved for future use*/
 };
-
-
 
 
 /* pbi_flags values */
@@ -620,12 +617,11 @@ struct kqueue_dyninfo {
 };
 
 /* keep in sync with KQ_* in sys/eventvar.h */
-#define PROC_KQUEUE_SELECT      0x01
-#define PROC_KQUEUE_SLEEP       0x02
-#define PROC_KQUEUE_32          0x08
-#define PROC_KQUEUE_64          0x10
-#define PROC_KQUEUE_QOS         0x20
-
+#define PROC_KQUEUE_SELECT      0x0001
+#define PROC_KQUEUE_SLEEP       0x0002
+#define PROC_KQUEUE_32          0x0008
+#define PROC_KQUEUE_64          0x0010
+#define PROC_KQUEUE_QOS         0x0020
 
 struct kqueue_fdinfo {
 	struct proc_fileinfo    pfi;
@@ -653,6 +649,8 @@ typedef uint64_t proc_info_udata_t;
 #define PROX_FDTYPE_PIPE        6
 #define PROX_FDTYPE_FSEVENTS    7
 #define PROX_FDTYPE_NETPOLICY   9
+#define PROX_FDTYPE_CHANNEL     10
+#define PROX_FDTYPE_NEXUS       11
 
 struct proc_fdinfo {
 	int32_t                 proc_fd;
@@ -664,6 +662,39 @@ struct proc_fileportinfo {
 	uint32_t                proc_fdtype;
 };
 
+/*
+ * Channel
+ */
+
+/* type */
+#define PROC_CHANNEL_TYPE_USER_PIPE             0
+#define PROC_CHANNEL_TYPE_KERNEL_PIPE           1
+#define PROC_CHANNEL_TYPE_NET_IF                2
+#define PROC_CHANNEL_TYPE_FLOW_SWITCH           3
+
+/* flags */
+#define PROC_CHANNEL_FLAGS_MONITOR_TX           0x1
+#define PROC_CHANNEL_FLAGS_MONITOR_RX           0x2
+#define PROC_CHANNEL_FLAGS_MONITOR_NO_COPY      0x4
+#define PROC_CHANNEL_FLAGS_EXCLUSIVE            0x10
+#define PROC_CHANNEL_FLAGS_USER_PACKET_POOL     0x20
+#define PROC_CHANNEL_FLAGS_DEFUNCT_OK           0x40
+#define PROC_CHANNEL_FLAGS_LOW_LATENCY          0x80
+#define PROC_CHANNEL_FLAGS_MONITOR                                      \
+	(PROC_CHANNEL_FLAGS_MONITOR_TX | PROC_CHANNEL_FLAGS_MONITOR_RX)
+
+struct proc_channel_info {
+	uuid_t                  chi_instance;
+	uint32_t                chi_port;
+	uint32_t                chi_type;
+	uint32_t                chi_flags;
+	uint32_t                rfu_1;/* reserved */
+};
+
+struct channel_fdinfo {
+	struct proc_fileinfo    pfi;
+	struct proc_channel_info channelinfo;
+};
 
 /* Flavors for proc_pidinfo() */
 #define PROC_PIDLISTFDS                 1
@@ -742,6 +773,8 @@ struct proc_fileportinfo {
 #define PROC_PIDFDATALKINFO_SIZE        (sizeof(struct appletalk_fdinfo))
 
 
+#define PROC_PIDFDCHANNELINFO           10
+#define PROC_PIDFDCHANNELINFO_SIZE      (sizeof(struct channel_fdinfo))
 
 /* Flavors for proc_pidfileportinfo */
 
@@ -791,9 +824,7 @@ struct proc_fileportinfo {
 #define PROC_UDATA_INFO_GET             1
 #define PROC_UDATA_INFO_SET             2
 
-
-
-
 __END_DECLS
+
 
 #endif /*_SYS_PROC_INFO_H */

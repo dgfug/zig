@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2020 Apple Inc. All rights reserved.
+ * Copyright (c) 2000-2021 Apple Inc. All rights reserved.
  *
  * @APPLE_OSREFERENCE_LICENSE_HEADER_START@
  *
@@ -75,6 +75,7 @@
 #endif
 
 
+
 #ifdef __APPLE__
 #define APPLE_IF_FAM_LOOPBACK  1
 #define APPLE_IF_FAM_ETHERNET  2
@@ -91,7 +92,7 @@
 #define APPLE_IF_FAM_FIREWIRE  13
 #define APPLE_IF_FAM_BOND      14
 #define APPLE_IF_FAM_CELLULAR  15
-#define APPLE_IF_FAM_6LOWPAN   16
+#define APPLE_IF_FAM_UNUSED_16 16       /* Un-used */
 #define APPLE_IF_FAM_UTUN      17
 #define APPLE_IF_FAM_IPSEC     18
 #endif /* __APPLE__ */
@@ -224,6 +225,13 @@ struct if_data64 {
 
 #pragma pack()
 
+#if defined(DRIVERKIT) || defined(PRIVATE) || defined(DRIVERKIT_PRIVATE)
+#include <net/if_var_status.h>
+#else
+struct ifnet_interface_advisory;
+#endif /* defined(DRIVERKIT) || defined(PRIVATE) || defined(DRIVERKIT_PRIVATE) */
+
+
 /*
  * Structure defining a queue for a network interface.
  */
@@ -234,9 +242,6 @@ struct  ifqueue {
 	int     ifq_maxlen;
 	int     ifq_drops;
 };
-
-
-
 
 
 

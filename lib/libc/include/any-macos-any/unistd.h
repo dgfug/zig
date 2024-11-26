@@ -121,7 +121,7 @@
 #define	_POSIX_SEMAPHORES		(-1)		/* [SEM] */
 #define	_POSIX_SHARED_MEMORY_OBJECTS	(-1)		/* [SHM] */
 #define	_POSIX_SHELL			200112L
-#define	_POSIX_SPAWN			(-1)		/* [SPN] */
+#define	_POSIX_SPAWN			200112L		/* [SPN] */
 #define	_POSIX_SPIN_LOCKS		(-1)		/* [SPI] */
 #define	_POSIX_SPORADIC_SERVER		(-1)		/* [SS] */
 #define	_POSIX_SYNCHRONIZED_IO		(-1)		/* [SIO] */
@@ -599,6 +599,10 @@ void	 sync(void);
 int	 truncate(const char *, off_t);
 useconds_t	 ualarm(useconds_t, useconds_t);
 int	 usleep(useconds_t) __DARWIN_ALIAS_C(usleep);
+
+#if !defined(_POSIX_C_SOURCE)
+__deprecated_msg("Use posix_spawn or fork")
+#endif
 pid_t	 vfork(void) __WATCHOS_PROHIBITED __TVOS_PROHIBITED;
 /* End XSI */
 
@@ -648,6 +652,7 @@ int	 execvP(const char * __file, const char * __searchpath, char * const * __arg
 char	*fflagstostr(unsigned long);
 int	 getdomainname(char *, int);
 int	 getgrouplist(const char *, int, int *, int *);
+__END_DECLS
 #if defined(__has_include)
 #if __has_include(<gethostuuid_private.h>)
 #include <gethostuuid_private.h>
@@ -657,6 +662,7 @@ int	 getgrouplist(const char *, int, int *, int *);
 #else
 #include <gethostuuid.h>
 #endif
+__BEGIN_DECLS
 mode_t	 getmode(const void *, mode_t);
 int	 getpeereid(int, uid_t *, gid_t *);
 int	 getsgroups_np(int *, uuid_t);

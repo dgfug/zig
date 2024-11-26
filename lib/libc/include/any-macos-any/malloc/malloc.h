@@ -28,6 +28,11 @@
 #include <mach/mach_types.h>
 #include <sys/cdefs.h>
 #include <Availability.h>
+#if !defined(_ANSI_SOURCE) && (!defined(_POSIX_C_SOURCE) || defined(_DARWIN_C_SOURCE))
+#include <malloc/_malloc_type.h>
+#else
+#define _MALLOC_TYPED(override, type_param_pos)
+#endif
 
 #if __has_feature(ptrauth_calls)
 #include <ptrauth.h>
@@ -97,6 +102,10 @@ typedef struct _malloc_zone_t {
 	 * not yet been allocated. False negatives are not allowed.
 	 */
     boolean_t (* MALLOC_ZONE_FN_PTR(claimed_address))(struct _malloc_zone_t *zone, void *ptr);
+
+    /* For zone 0 implementations: try to free ptr, promising to call find_zone_and_free
+     * if it turns out not to belong to us */
+    void 	(* MALLOC_ZONE_FN_PTR(try_free_default))(struct _malloc_zone_t *zone, void *ptr);
 } malloc_zone_t;
 
 /*********	Creation and destruction	************/
@@ -112,19 +121,19 @@ extern void malloc_destroy_zone(malloc_zone_t *zone);
 
 /*********	Block creation and manipulation	************/
 
-extern void *malloc_zone_malloc(malloc_zone_t *zone, size_t size) __alloc_size(2);
+extern void *malloc_zone_malloc(malloc_zone_t *zone, size_t size) __alloc_size(2) _MALLOC_TYPED(malloc_type_zone_malloc, 2);
     /* Allocates a new pointer of size size; zone must be non-NULL */
 
-extern void *malloc_zone_calloc(malloc_zone_t *zone, size_t num_items, size_t size) __alloc_size(2,3);
+extern void *malloc_zone_calloc(malloc_zone_t *zone, size_t num_items, size_t size) __alloc_size(2,3) _MALLOC_TYPED(malloc_type_zone_calloc, 3);
     /* Allocates a new pointer of size num_items * size; block is cleared; zone must be non-NULL */
 
-extern void *malloc_zone_valloc(malloc_zone_t *zone, size_t size) __alloc_size(2);
+extern void *malloc_zone_valloc(malloc_zone_t *zone, size_t size) __alloc_size(2) _MALLOC_TYPED(malloc_type_zone_valloc, 2);
     /* Allocates a new pointer of size size; zone must be non-NULL; Pointer is guaranteed to be page-aligned and block is cleared */
 
 extern void malloc_zone_free(malloc_zone_t *zone, void *ptr);
     /* Frees pointer in zone; zone must be non-NULL */
 
-extern void *malloc_zone_realloc(malloc_zone_t *zone, void *ptr, size_t size) __alloc_size(3);
+extern void *malloc_zone_realloc(malloc_zone_t *zone, void *ptr, size_t size) __alloc_size(3) _MALLOC_TYPED(malloc_type_zone_realloc, 3);
     /* Enlarges block if necessary; zone must be non-NULL */
 
 extern malloc_zone_t *malloc_zone_from_ptr(const void *ptr);
@@ -132,12 +141,12 @@ extern malloc_zone_t *malloc_zone_from_ptr(const void *ptr);
     The ptr must have been returned from a malloc or realloc call. */
 
 extern size_t malloc_size(const void *ptr);
-    /* Returns size of given ptr */
+    /* Returns size of given ptr, including any padding inserted by the allocator */
 
 extern size_t malloc_good_size(size_t size);
     /* Returns number of bytes greater than or equal to size that can be allocated without padding */
 
-extern void *malloc_zone_memalign(malloc_zone_t *zone, size_t alignment, size_t size) __alloc_size(3) __OSX_AVAILABLE_STARTING(__MAC_10_6, __IPHONE_3_0);
+extern void *malloc_zone_memalign(malloc_zone_t *zone, size_t alignment, size_t size) __alloc_size(3) _MALLOC_TYPED(malloc_type_zone_memalign, 3) __OSX_AVAILABLE_STARTING(__MAC_10_6, __IPHONE_3_0);
     /* 
      * Allocates a new pointer of size size whose address is an exact multiple of alignment.
      * alignment must be a power of two and at least as large as sizeof(void *).
@@ -240,7 +249,8 @@ typedef struct malloc_introspection_t {
 #endif /* __BLOCKS__ */
 	void	(* MALLOC_INTROSPECT_FN_PTR(reinit_lock))(malloc_zone_t *zone); /* Reinitialize zone locks, called only from atfork_child handler. Present in version >= 9. */
 	void	(* MALLOC_INTROSPECT_FN_PTR(print_task))(task_t task, unsigned level, vm_address_t zone_address, memory_reader_t reader, print_task_printer_t printer); /* debug print for another process. Present in version >= 11. */
-	void (* MALLOC_INTROSPECT_FN_PTR(task_statistics))(task_t task, vm_address_t zone_address, memory_reader_t reader, malloc_statistics_t *stats); /* Present in version >= 12 */
+	void	(* MALLOC_INTROSPECT_FN_PTR(task_statistics))(task_t task, vm_address_t zone_address, memory_reader_t reader, malloc_statistics_t *stats); /* Present in version >= 12. */
+    unsigned	zone_type; /* Identifies the zone type.  0 means unknown/undefined zone type.  Present in version >= 14. */
 } malloc_introspection_t;
 
 // The value of "level" when passed to print_task() that corresponds to
@@ -308,6 +318,39 @@ extern void malloc_zone_enumerate_discharged_pointers(malloc_zone_t *zone, void 
 #else
 extern void malloc_zone_enumerate_discharged_pointers(malloc_zone_t *zone, void *) __OSX_AVAILABLE_STARTING(__MAC_10_7, __IPHONE_4_3);
 #endif /* __BLOCKS__ */
+
+/*********  Zone version summary ************/
+// Version 0, but optional:
+//   malloc_zone_t::batch_malloc
+//   malloc_zone_t::batch_free
+// Version 5:
+//   malloc_zone_t::memalign
+// Version 6:
+//   malloc_zone_t::free_definite_size
+// Version 7:
+//   malloc_introspection_t::enable_discharge_checking
+//   malloc_introspection_t::disable_discharge_checking
+//   malloc_introspection_t::discharge
+// Version 8:
+//   malloc_zone_t::pressure_relief
+// Version 9:
+//   malloc_introspection_t::reinit_lock
+// Version 10:
+//   malloc_zone_t::claimed_address
+// Version 11:
+//   malloc_introspection_t::print_task
+// Version 12:
+//   malloc_introspection_t::task_statistics
+// Version 13:
+//   - malloc_zone_t::malloc and malloc_zone_t::calloc assume responsibility for
+//     setting errno to ENOMEM on failure
+//   - malloc_zone_t::try_free_default
+// Version 14:
+//   malloc_introspection_t::zone_type
+
+// These functions are optional and calling them requires two checks:
+//  * Check zone version to ensure zone struct is large enough to include the member.
+//  * Check that the function pointer is not null.
 
 __END_DECLS
 

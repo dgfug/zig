@@ -1,5 +1,5 @@
 /* `ptrace' debugger support interface.  Linux/AArch64 version.
-   Copyright (C) 1996-2021 Free Software Foundation, Inc.
+   Copyright (C) 1996-2024 Free Software Foundation, Inc.
 
    This file is part of the GNU C Library.
 
@@ -24,6 +24,43 @@
 #include <bits/types.h>
 
 __BEGIN_DECLS
+
+/* Avoid collision if the linux ptrace header is already included.  */
+#undef PTRACE_TRACEME
+#undef PTRACE_PEEKTEXT
+#undef PTRACE_PEEKDATA
+#undef PTRACE_PEEKUSER
+#undef PTRACE_POKETEXT
+#undef PTRACE_POKEDATA
+#undef PTRACE_POKEUSER
+#undef PTRACE_CONT
+#undef PTRACE_KILL
+#undef PTRACE_SINGLESTEP
+#undef PTRACE_ATTACH
+#undef PTRACE_DETACH
+#undef PTRACE_SYSCALL
+#undef PTRACE_SYSEMU
+#undef PTRACE_SYSEMU_SINGLESTEP
+#undef PTRACE_PEEKMTETAGS
+#undef PTRACE_POKEMTETAGS
+#undef PTRACE_SETOPTIONS
+#undef PTRACE_GETEVENTMSG
+#undef PTRACE_GETSIGINFO
+#undef PTRACE_SETSIGINFO
+#undef PTRACE_GETREGSET
+#undef PTRACE_SETREGSET
+#undef PTRACE_SEIZE
+#undef PTRACE_INTERRUPT
+#undef PTRACE_LISTEN
+#undef PTRACE_PEEKSIGINFO
+#undef PTRACE_GETSIGMASK
+#undef PTRACE_SETSIGMASK
+#undef PTRACE_SECCOMP_GET_FILTER
+#undef PTRACE_SECCOMP_GET_METADATA
+#undef PTRACE_GET_SYSCALL_INFO
+#undef PTRACE_GET_RSEQ_CONFIGURATION
+#undef PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG
+#undef PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG
 
 /* Type of the REQUEST argument to `ptrace.'  */
 enum __ptrace_request
@@ -81,6 +118,22 @@ enum __ptrace_request
   /* Continue and stop at the next entry to or return from syscall.  */
   PTRACE_SYSCALL = 24,
 #define PT_SYSCALL PTRACE_SYSCALL
+
+  /* Continue and stop at the next syscall, it will not be executed.  */
+  PTRACE_SYSEMU = 31,
+#define PT_SYSEMU PTRACE_SYSEMU
+
+  /* Single step the process, the next syscall will not be executed.  */
+  PTRACE_SYSEMU_SINGLESTEP = 32,
+#define PT_SYSEMU_SINGLESTEP PTRACE_SYSEMU_SINGLESTEP
+
+  /* Read MTE tags.  */
+  PTRACE_PEEKMTETAGS = 33,
+#define PT_PEEKMTETAGS PTRACE_PEEKMTETAGS
+
+  /* Write MTE tags.  */
+  PTRACE_POKEMTETAGS = 34,
+#define PT_POKEMTETAGS PTRACE_POKEMTETAGS
 
   /* Set ptrace filter options.  */
   PTRACE_SETOPTIONS = 0x4200,
@@ -140,8 +193,22 @@ enum __ptrace_request
 #define PTRACE_SECCOMP_GET_METADATA PTRACE_SECCOMP_GET_METADATA
 
   /* Get information about system call.  */
-  PTRACE_GET_SYSCALL_INFO = 0x420e
+  PTRACE_GET_SYSCALL_INFO = 0x420e,
 #define PTRACE_GET_SYSCALL_INFO PTRACE_GET_SYSCALL_INFO
+
+  /* Get rseq configuration information.  */
+  PTRACE_GET_RSEQ_CONFIGURATION = 0x420f,
+#define PTRACE_GET_RSEQ_CONFIGURATION PTRACE_GET_RSEQ_CONFIGURATION
+
+  /* Set configuration for syscall user dispatch.  */
+  PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG = 0x4210,
+#define PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG \
+  PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG
+
+  /* Get configuration for syscall user dispatch.  */
+  PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG = 0x4211
+#define PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG \
+  PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG
 };
 
 

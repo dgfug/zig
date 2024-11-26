@@ -1,18 +1,15 @@
 const std = @import("std");
 const tests = @import("tests.zig");
-const nl = std.cstr.line_sep;
+const nl = if (@import("builtin").os.tag == .windows) "\r\n" else "\n";
+
+// *********************************************************
+// *                                                       *
+// *               DO NOT ADD NEW CASES HERE               *
+// *   instead add a file to test/cases/run_translated_c   *
+// *                                                       *
+// *********************************************************
 
 pub fn addCases(cases: *tests.RunTranslatedCContext) void {
-    cases.add("dereference address of",
-        \\#include <stdlib.h>
-        \\int main(void) {
-        \\    int i = 0;
-        \\    *&i = 42;
-        \\    if (i != 42) abort();
-        \\	  return 0;
-        \\}
-    , "");
-
     cases.add("division of floating literals",
         \\#define _NO_CRT_STDIO_INLINE 1
         \\#include <stdio.h>
@@ -29,17 +26,17 @@ pub fn addCases(cases: *tests.RunTranslatedCContext) void {
         \\void baz(void);
         \\struct foo { int x; };
         \\void bar() {
-        \\	struct foo tmp;
+        \\    struct foo tmp;
         \\}
         \\
         \\void baz() {
-        \\	struct foo tmp;
+        \\    struct foo tmp;
         \\}
         \\
         \\int main(void) {
-        \\	bar();
-        \\	baz();
-        \\	return 0;
+        \\    bar();
+        \\    baz();
+        \\    return 0;
         \\}
     , "");
 
@@ -56,7 +53,7 @@ pub fn addCases(cases: *tests.RunTranslatedCContext) void {
     cases.add("parenthesized string literal",
         \\void foo(const char *s) {}
         \\int main(void) {
-        \\	foo(("bar"));
+        \\    foo(("bar"));
         \\}
     , "");
 
@@ -1326,6 +1323,9 @@ pub fn addCases(cases: *tests.RunTranslatedCContext) void {
         \\int main(int argc, char**argv) {
         \\    __v8hi uninitialized;
         \\    __v8hi empty_init = {};
+        \\    for (int i = 0; i < 8; i++) {
+        \\        if (empty_init[i] != 0) abort();
+        \\    }
         \\    __v8hi partial_init = {0, 1, 2, 3};
         \\
         \\    __v8hi a = {0, 1, 2, 3, 4, 5, 6, 7};
@@ -1547,6 +1547,24 @@ pub fn addCases(cases: *tests.RunTranslatedCContext) void {
         \\    const INT_LIST *const c_int_list = int_list;
         \\    const int *const ints = int_list->items;
         \\    for (int i = 0; i < SIZE; i++) if (ints[i] != i) abort();
+        \\    return 0;
+        \\}
+    , "");
+
+    cases.add("Flexible array with typedefed flexible item, issue #16838",
+        \\#include <stdlib.h>
+        \\#include <assert.h>
+        \\typedef int MARKER[0];
+        \\typedef struct { int x; MARKER y; } Flexible;
+        \\#define SIZE 10
+        \\int main(void) {
+        \\    Flexible *flex = malloc(sizeof(Flexible) + SIZE * sizeof(int));
+        \\    for (int i = 0; i < SIZE; i++) {
+        \\        flex->y[i] = i;
+        \\    }
+        \\    for (int i = 0; i < SIZE; i++) {
+        \\        assert(flex->y[i] == i);
+        \\    }
         \\    return 0;
         \\}
     , "");
@@ -1781,6 +1799,130 @@ pub fn addCases(cases: *tests.RunTranslatedCContext) void {
         \\}
         \\int main(void) {
         \\    process(99, 3, 0);
+        \\    return 0;
+        \\}
+    , "");
+
+    cases.add("Remainder operator with negative integers. Issue #10176",
+        \\#include <stdlib.h>
+        \\int main(void) {
+        \\    int denominator = -2;
+        \\    int numerator = 5;
+        \\    if (numerator % denominator != 1) abort();
+        \\    numerator = -5; denominator = 2;
+        \\    if (numerator % denominator != -1) abort();
+        \\    return 0;
+        \\}
+    , "");
+
+    cases.add("Boolean expression coerced to int. Issue #10175",
+        \\#include <stdlib.h>
+        \\int sign(int v) {
+        \\    return -(v < 0);
+        \\}
+        \\int main(void) {
+        \\    if (sign(-5) != -1) abort();
+        \\    if (sign(5) != 0) abort();
+        \\    if (sign(0) != 0) abort();
+        \\    return 0;
+        \\}
+    , "");
+
+    cases.add("Typedef'ed void used as return type. Issue #10356",
+        \\typedef void V;
+        \\V foo(V *f) {}
+        \\int main(void) {
+        \\    int x = 0;
+        \\    foo(&x);
+        \\    return 0;
+        \\}
+    , "");
+
+    cases.add("Zero-initialization of global union. Issue #10797",
+        \\#include <stdlib.h>
+        \\union U { int x; double y; };
+        \\union U u;
+        \\int main(void) {
+        \\    if (u.x != 0) abort();
+        \\    return 0;
+        \\}
+    , "");
+
+    cases.add("Cast-to-union. Issue #10955",
+        \\#include <stdlib.h>
+        \\struct S { int x; };
+        \\union U {
+        \\    long l;
+        \\    double d;
+        \\    struct S s;
+        \\};
+        \\union U bar(union U u) { return u; }
+        \\int main(void) {
+        \\    union U u = (union U) 42L;
+        \\    if (u.l != 42L) abort();
+        \\    u = (union U) 2.0;
+        \\    if (u.d != 2.0) abort();
+        \\    u = bar((union U)4.0);
+        \\    if (u.d != 4.0) abort();
+        \\    u = (union U)(struct S){ .x = 5 };
+        \\    if (u.s.x != 5) abort();
+        \\    return 0;
+        \\}
+    , "");
+
+    cases.add("Nested comma operator in macro. Issue #11040",
+        \\#include <stdlib.h>
+        \\#define FOO (1, (2,  3))
+        \\int main(void) {
+        \\    int x = FOO;
+        \\    if (x != 3) abort();
+        \\    return 0;
+        \\}
+    , "");
+
+    // The C standard does not require function pointers to be convertible to any integer type.
+    // However, POSIX requires that function pointers have the same representation as `void *`
+    // so that dlsym() can work
+    cases.add("Function to integral",
+        \\#include <stdint.h>
+        \\int main(void) {
+        \\#if defined(__UINTPTR_MAX__) && __has_include(<unistd.h>)
+        \\    uintptr_t x = (uintptr_t)main;
+        \\#endif
+        \\    return 0;
+        \\}
+    , "");
+
+    cases.add("Closure over local in typeof",
+        \\#include <stdlib.h>
+        \\int main(void) {
+        \\    int x = 123;
+        \\    union { typeof(x) val; } u = { x };
+        \\    if (u.val != 123) abort();
+        \\    return 0;
+        \\}
+    , "");
+
+    cases.add("struct without global declaration does not conflict with local variable name",
+        \\#include <stdlib.h>
+        \\static void foo(struct foobar *unused) {}
+        \\int main(void) {
+        \\    int struct_foobar = 123;
+        \\    if (struct_foobar != 123) abort();
+        \\    int foobar = 456;
+        \\    if (foobar != 456) abort();
+        \\    return 0;
+        \\}
+    , "");
+
+    cases.add("struct without global declaration does not conflict with global variable name",
+        \\#include <stdlib.h>
+        \\static void foo(struct foobar *unused) {}
+        \\static int struct_foobar = 123;
+        \\static int foobar = 456;
+        \\int main(void) {
+        \\    if (struct_foobar != 123) abort();
+        \\    if (foobar != 456) abort();
         \\    return 0;
         \\}
     , "");

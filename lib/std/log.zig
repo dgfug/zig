@@ -1,6 +1,6 @@
 //! std.log is a standardized interface for logging which allows for the logging
 //! of programs and libraries using this interface to be formatted and filtered
-//! by the implementer of the root.log function.
+//! by the implementer of the `std.options.logFn` function.
 //!
 //! Each log message has an associated scope enum, which can be used to give
 //! context to the logging. The logging functions in std.log implicitly use a
@@ -13,36 +13,40 @@
 //! `const log = std.log.scoped(.libfoo);` to use .libfoo as the scope of its
 //! log messages.
 //!
-//! An example root.log might look something like this:
+//! An example `logFn` might look something like this:
 //!
 //! ```
 //! const std = @import("std");
 //!
-//! // Set the log level to info
-//! pub const log_level: std.log.Level = .info;
+//! pub const std_options = .{
+//!     // Set the log level to info
+//!     .log_level = .info,
 //!
-//! // Define root.log to override the std implementation
-//! pub fn log(
+//!     // Define logFn to override the std implementation
+//!     .logFn = myLogFn,
+//! };
+//!
+//! pub fn myLogFn(
 //!     comptime level: std.log.Level,
-//!     comptime scope: @TypeOf(.EnumLiteral),
+//!     comptime scope: @Type(.enum_literal),
 //!     comptime format: []const u8,
 //!     args: anytype,
 //! ) void {
 //!     // Ignore all non-error logging from sources other than
-//!     // .my_project, .nice_library and .default
+//!     // .my_project, .nice_library and the default
 //!     const scope_prefix = "(" ++ switch (scope) {
-//!         .my_project, .nice_library, .default => @tagName(scope),
-//!         else => if (@enumToInt(level) <= @enumToInt(std.log.Level.err))
+//!         .my_project, .nice_library, std.log.default_log_scope => @tagName(scope),
+//!         else => if (@intFromEnum(level) <= @intFromEnum(std.log.Level.err))
 //!             @tagName(scope)
 //!         else
 //!             return,
 //!     } ++ "): ";
 //!
-//!     const prefix = "[" ++ level.asText() ++ "] " ++ scope_prefix;
+//!     const prefix = "[" ++ comptime level.asText() ++ "] " ++ scope_prefix;
 //!
 //!     // Print the message to stderr, silently ignoring any errors
-//!     const held = std.debug.getStderrMutex().acquire();
-//!     defer held.release();
+//!     std.debug.lockStdErr();
+//!     defer std.debug.unlockStdErr();
 //!     const stderr = std.io.getStdErr().writer();
 //!     nosuspend stderr.print(prefix ++ format ++ "\n", args) catch return;
 //! }
@@ -70,7 +74,6 @@
 
 const std = @import("std.zig");
 const builtin = @import("builtin");
-const root = @import("root");
 
 pub const Level = enum {
     /// Error: something has gone wrong. This might be recoverable or might
@@ -85,12 +88,7 @@ pub const Level = enum {
     debug,
 
     /// Returns a string literal of the given level in full text form.
-    pub fn asText(comptime self: Level) switch (self) {
-        .err => @TypeOf("error"),
-        .warn => @TypeOf("warning"),
-        .info => @TypeOf("info"),
-        .debug => @TypeOf("debug"),
-    } {
+    pub fn asText(comptime self: Level) []const u8 {
         return switch (self) {
             .err => "error",
             .warn => "warning",
@@ -107,82 +105,65 @@ pub const default_level: Level = switch (builtin.mode) {
     .ReleaseFast, .ReleaseSmall => .err,
 };
 
-/// The current log level. This is set to root.log_level if present, otherwise
-/// log.default_level.
-pub const level: Level = if (@hasDecl(root, "log_level"))
-    root.log_level
-else
-    default_level;
+const level = std.options.log_level;
 
 pub const ScopeLevel = struct {
-    scope: @Type(.EnumLiteral),
+    scope: @Type(.enum_literal),
     level: Level,
 };
 
-const scope_levels = if (@hasDecl(root, "scope_levels"))
-    root.scope_levels
-else
-    [0]ScopeLevel{};
+const scope_levels = std.options.log_scope_levels;
 
 fn log(
     comptime message_level: Level,
-    comptime scope: @Type(.EnumLiteral),
+    comptime scope: @Type(.enum_literal),
     comptime format: []const u8,
     args: anytype,
 ) void {
-    const effective_log_level = blk: {
-        inline for (scope_levels) |scope_level| {
-            if (scope_level.scope == scope) break :blk scope_level.level;
-        }
-        break :blk level;
-    };
+    if (comptime !logEnabled(message_level, scope)) return;
 
-    if (@enumToInt(message_level) <= @enumToInt(effective_log_level)) {
-        if (@hasDecl(root, "log")) {
-            if (@typeInfo(@TypeOf(root.log)) != .Fn)
-                @compileError("Expected root.log to be a function");
-            root.log(message_level, scope, format, args);
-        } else {
-            defaultLog(message_level, scope, format, args);
-        }
-    }
+    std.options.logFn(message_level, scope, format, args);
 }
 
-/// The default implementation for root.log.  root.log may forward log messages
-/// to this function.
+/// Determine if a specific log message level and scope combination are enabled for logging.
+pub fn logEnabled(comptime message_level: Level, comptime scope: @Type(.enum_literal)) bool {
+    inline for (scope_levels) |scope_level| {
+        if (scope_level.scope == scope) return @intFromEnum(message_level) <= @intFromEnum(scope_level.level);
+    }
+    return @intFromEnum(message_level) <= @intFromEnum(level);
+}
+
+/// Determine if a specific log message level using the default log scope is enabled for logging.
+pub fn defaultLogEnabled(comptime message_level: Level) bool {
+    return comptime logEnabled(message_level, default_log_scope);
+}
+
+/// The default implementation for the log function, custom log functions may
+/// forward log messages to this function.
 pub fn defaultLog(
     comptime message_level: Level,
-    comptime scope: @Type(.EnumLiteral),
+    comptime scope: @Type(.enum_literal),
     comptime format: []const u8,
     args: anytype,
 ) void {
-    if (builtin.os.tag == .freestanding) {
-        // On freestanding one must provide a log function; we do not have
-        // any I/O configured.
-        return;
-    }
-
     const level_txt = comptime message_level.asText();
     const prefix2 = if (scope == .default) ": " else "(" ++ @tagName(scope) ++ "): ";
     const stderr = std.io.getStdErr().writer();
-    const held = std.debug.getStderrMutex().acquire();
-    defer held.release();
-    nosuspend stderr.print(level_txt ++ prefix2 ++ format ++ "\n", args) catch return;
+    var bw = std.io.bufferedWriter(stderr);
+    const writer = bw.writer();
+
+    std.debug.lockStdErr();
+    defer std.debug.unlockStdErr();
+    nosuspend {
+        writer.print(level_txt ++ prefix2 ++ format ++ "\n", args) catch return;
+        bw.flush() catch return;
+    }
 }
 
 /// Returns a scoped logging namespace that logs all messages using the scope
 /// provided here.
-pub fn scoped(comptime scope: @Type(.EnumLiteral)) type {
+pub fn scoped(comptime scope: @Type(.enum_literal)) type {
     return struct {
-        /// Deprecated. TODO: replace with @compileError() after 0.9.0 is released
-        pub const emerg = @This().err;
-
-        /// Deprecated. TODO: replace with @compileError() after 0.9.0 is released
-        pub const alert = @This().err;
-
-        /// Deprecated. TODO: replace with @compileError() after 0.9.0 is released
-        pub const crit = @This().err;
-
         /// Log an error message. This log level is intended to be used
         /// when something has gone wrong. This might be recoverable or might
         /// be followed by the program exiting.
@@ -190,7 +171,7 @@ pub fn scoped(comptime scope: @Type(.EnumLiteral)) type {
             comptime format: []const u8,
             args: anytype,
         ) void {
-            @setCold(true);
+            @branchHint(.cold);
             log(.err, scope, format, args);
         }
 
@@ -203,9 +184,6 @@ pub fn scoped(comptime scope: @Type(.EnumLiteral)) type {
         ) void {
             log(.warn, scope, format, args);
         }
-
-        /// Deprecated. TODO: replace with @compileError() after 0.9.0 is released
-        pub const notice = @This().info;
 
         /// Log an info message. This log level is intended to be used for
         /// general messages about the state of the program.
@@ -227,17 +205,10 @@ pub fn scoped(comptime scope: @Type(.EnumLiteral)) type {
     };
 }
 
+pub const default_log_scope = .default;
+
 /// The default scoped logging namespace.
-pub const default = scoped(.default);
-
-/// Deprecated. TODO: replace with @compileError() after 0.9.0 is released
-pub const emerg = default.err;
-
-/// Deprecated. TODO: replace with @compileError() after 0.9.0 is released
-pub const alert = default.err;
-
-/// Deprecated. TODO: replace with @compileError() after 0.9.0 is released
-pub const crit = default.err;
+pub const default = scoped(default_log_scope);
 
 /// Log an error message using the default scope. This log level is intended to
 /// be used when something has gone wrong. This might be recoverable or might
@@ -248,9 +219,6 @@ pub const err = default.err;
 /// to be used if it is uncertain whether something has gone wrong or not, but
 /// the circumstances would be worth investigating.
 pub const warn = default.warn;
-
-/// Deprecated. TODO: replace with @compileError() after 0.9.0 is released
-pub const notice = default.info;
 
 /// Log an info message using the default scope. This log level is intended to
 /// be used for general messages about the state of the program.

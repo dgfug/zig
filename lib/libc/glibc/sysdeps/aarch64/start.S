@@ -1,11 +1,28 @@
-/* Copyright (C) 1995-2020 Free Software Foundation, Inc.
+/* Copyright (C) 1995-2024 Free Software Foundation, Inc.
 
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
-   modify it under the terms of the GNU Lesser General Public License as
-   published by the Free Software Foundation; either version 2.1 of the
-   License, or (at your option) any later version.
+   modify it under the terms of the GNU Lesser General Public
+   License as published by the Free Software Foundation; either
+   version 2.1 of the License, or (at your option) any later version.
+
+   In addition to the permissions in the GNU Lesser General Public
+   License, the Free Software Foundation gives you unlimited
+   permission to link the compiled version of this file with other
+   programs, and to distribute those programs without any restriction
+   coming from the use of this file. (The GNU Lesser General Public
+   License restrictions do apply in other respects; for example, they
+   cover modification of the file, and distribution when not linked
+   into another program.)
+
+   Note that people who make modified versions of this file are not
+   obligated to grant this special exception for their modified
+   versions; it is their choice whether to do so. The GNU Lesser
+   General Public License gives permission to release a modified
+   version without this exception; this exception also makes it
+   possible to release a modified version which carries forward this
+   exception.
 
    The GNU C Library is distributed in the hope that it will be useful,
    but WITHOUT ANY WARRANTY; without even the implied warranty of
@@ -13,7 +30,7 @@
    Lesser General Public License for more details.
 
    You should have received a copy of the GNU Lesser General Public
-   License along with the GNU C Library.  If not, see
+   License along with the GNU C Library; if not, see
    <https://www.gnu.org/licenses/>.  */
 
 #include <sysdep.h>
@@ -43,10 +60,9 @@
  */
 
 	.text
-	.globl _start
-	.type _start,#function
-_start:
+ENTRY(_start)
 	/* Create an initial frame with 0 LR and FP */
+	cfi_undefined (x30)
 	mov	x29, #0
 	mov	x30, #0
 
@@ -64,26 +80,16 @@ _start:
 # ifdef SHARED
         adrp    x0, :got:main
 	ldr     PTR_REG (0), [x0, #:got_lo12:main]
-
-        adrp    x3, :got:__libc_csu_init
-	ldr     PTR_REG (3), [x3, #:got_lo12:__libc_csu_init]
-
-        adrp    x4, :got:__libc_csu_fini
-	ldr     PTR_REG (4), [x4, #:got_lo12:__libc_csu_fini]
 # else
 	adrp	x0, __wrap_main
 	add	x0, x0, :lo12:__wrap_main
-	adrp	x3, __libc_csu_init
-	add	x3, x3, :lo12:__libc_csu_init
-	adrp	x4, __libc_csu_fini
-	add	x4, x4, :lo12:__libc_csu_fini
 # endif
 #else
 	/* Set up the other arguments in registers */
 	MOVL (0, main)
-	MOVL (3, __libc_csu_init)
-	MOVL (4, __libc_csu_fini)
 #endif
+	mov	x3, #0		/* Used to be init.  */
+	mov	x4, #0		/* Used to be fini.  */
 
 	/* __libc_start_main (main, argc, argv, init, fini, rtld_fini,
 			      stack_end) */
@@ -100,8 +106,10 @@ _start:
 	   because crt1.o and rcrt1.o share code and the later must avoid the
 	   use of GOT relocations before __libc_start_main is called.  */
 __wrap_main:
+	BTI_C
 	b	main
 #endif
+END(_start)
 
 	/* Define a symbol for the first piece of initialized data.  */
 	.data

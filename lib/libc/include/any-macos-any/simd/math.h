@@ -25,10 +25,12 @@
  *    cos(x)        simd::cos(x)
  *    sin(x)        simd::sin(x)
  *    tan(x)        simd::tan(x)
- *    
+ *    sincos(x)     simd::sincos(x)   Computes sin(x) and cos(x) more efficiently
+ *
  *    cospi(x)      simd::cospi(x)    Returns cos(pi*x), sin(pi*x), tan(pi*x)
  *    sinpi(x)      simd::sinpi(x)    more efficiently and accurately than
  *    tanpi(x)      simd::tanpi(x)    would otherwise be possible
+ *    sincospi(x)   simd::sincospi(x) Computes sin(pi*x) and cos(pi*x) more efficiently
  *
  *    acosh(x)      simd::acosh(x)
  *    asinh(x)      simd::asinh(x)
@@ -58,6 +60,7 @@
  *    erf(x)        simd::erf(x)
  *    erfc(x)       simd::erfc(x)
  *    tgamma(x)     simd::tgamma(x)
+ *    lgamma(x)     simd::lgamma(x)
  *
  *    fmod(x,y)      simd::fmod(x,y)
  *    remainder(x,y) simd::remainder(x,y)
@@ -78,7 +81,6 @@
  *                                    and later; may be quite expensive on
  *                                    older hardware.
  *    simd_muladd(x,y,z) simd::muladd(x,y,z)
- *
  *  @copyright 2014-2017 Apple, Inc. All rights reserved.
  *  @unsorted                                                                 */
 
@@ -913,6 +915,34 @@ static inline SIMD_CFUNC simd_double4 __tg_tgamma(simd_double4 x);
  *  Objective-C, and `simd::tgamma` in C++.                                   */
 static inline SIMD_CFUNC simd_double8 __tg_tgamma(simd_double8 x);
 
+/*! @abstract Do not call this function; instead use `lgamma` in C and
+ *  Objective-C, and `simd::lgamma` in C++.                                   */
+static inline SIMD_CFUNC simd_float2 __tg_lgamma(simd_float2 x);
+/*! @abstract Do not call this function; instead use `lgamma` in C and
+ *  Objective-C, and `simd::lgamma` in C++.                                   */
+static inline SIMD_CFUNC simd_float3 __tg_lgamma(simd_float3 x);
+/*! @abstract Do not call this function; instead use `lgamma` in C and
+ *  Objective-C, and `simd::lgamma` in C++.                                   */
+static inline SIMD_CFUNC simd_float4 __tg_lgamma(simd_float4 x);
+/*! @abstract Do not call this function; instead use `lgamma` in C and
+ *  Objective-C, and `simd::lgamma` in C++.                                   */
+static inline SIMD_CFUNC simd_float8 __tg_lgamma(simd_float8 x);
+/*! @abstract Do not call this function; instead use `lgamma` in C and
+ *  Objective-C, and `simd::lgamma` in C++.                                   */
+static inline SIMD_CFUNC simd_float16 __tg_lgamma(simd_float16 x);
+/*! @abstract Do not call this function; instead use `lgamma` in C and
+ *  Objective-C, and `simd::lgamma` in C++.                                   */
+static inline SIMD_CFUNC simd_double2 __tg_lgamma(simd_double2 x);
+/*! @abstract Do not call this function; instead use `lgamma` in C and
+ *  Objective-C, and `simd::lgamma` in C++.                                   */
+static inline SIMD_CFUNC simd_double3 __tg_lgamma(simd_double3 x);
+/*! @abstract Do not call this function; instead use `lgamma` in C and
+ *  Objective-C, and `simd::lgamma` in C++.                                   */
+static inline SIMD_CFUNC simd_double4 __tg_lgamma(simd_double4 x);
+/*! @abstract Do not call this function; instead use `lgamma` in C and
+ *  Objective-C, and `simd::lgamma` in C++.                                   */
+static inline SIMD_CFUNC simd_double8 __tg_lgamma(simd_double8 x);
+
 /*! @abstract Do not call this function; instead use `ceil` in C and
  *  Objective-C, and `simd::ceil` in C++.                                     */
 static inline SIMD_CFUNC simd_float2 __tg_ceil(simd_float2 x);
@@ -1053,7 +1083,177 @@ static inline SIMD_CFUNC simd_double4 __tg_trunc(simd_double4 x);
  *  Objective-C, and `simd::trunc` in C++.                                    */
 static inline SIMD_CFUNC simd_double8 __tg_trunc(simd_double8 x);
 
-    
+#if SIMD_LIBRARY_VERSION >= 5
+/*! @abstract Do not call this function; instead use `sincos` in C and
+ *  Objective-C, and `simd::sincos` in C++.                                   */
+static inline SIMD_NONCONST void __tg_sincos(simd_float2 x, simd_float2 *sinp, simd_float2 *cosp);
+/*! @abstract Do not call this function; instead use `sincos` in C and
+ *  Objective-C, and `simd::sincos` in C++.                                   */
+static inline SIMD_NONCONST void __tg_sincos(simd_float3 x, simd_float3 *sinp, simd_float3 *cosp);
+/*! @abstract Do not call this function; instead use `sincos` in C and
+ *  Objective-C, and `simd::sincos` in C++.                                   */
+static inline SIMD_NONCONST void __tg_sincos(simd_float4 x, simd_float4 *sinp, simd_float4 *cosp);
+/*! @abstract Do not call this function; instead use `sincos` in C and
+ *  Objective-C, and `simd::sincos` in C++.                                   */
+static inline SIMD_NONCONST void __tg_sincos(simd_float8 x, simd_float8 *sinp, simd_float8 *cosp);
+/*! @abstract Do not call this function; instead use `sincos` in C and
+ *  Objective-C, and `simd::sincos` in C++.                                   */
+static inline SIMD_NONCONST void __tg_sincos(simd_float16 x, simd_float16 *sinp, simd_float16 *cosp);
+/*! @abstract Do not call this function; instead use `sincos` in C and
+ *  Objective-C, and `simd::sincos` in C++.                                   */
+static inline SIMD_NONCONST void __tg_sincos(simd_double2 x, simd_double2 *sinp, simd_double2 *cosp);
+/*! @abstract Do not call this function; instead use `sincos` in C and
+ *  Objective-C, and `simd::sincos` in C++.                                   */
+static inline SIMD_NONCONST void __tg_sincos(simd_double3 x, simd_double3 *sinp, simd_double3 *cosp);
+/*! @abstract Do not call this function; instead use `sincos` in C and
+ *  Objective-C, and `simd::sincos` in C++.                                   */
+static inline SIMD_NONCONST void __tg_sincos(simd_double4 x, simd_double4 *sinp, simd_double4 *cosp);
+/*! @abstract Do not call this function; instead use `sincos` in C and
+ *  Objective-C, and `simd::sincos` in C++.                                   */
+static inline SIMD_NONCONST void __tg_sincos(simd_double8 x, simd_double8 *sinp, simd_double8 *cosp);
+
+/*! @abstract Do not call this function; instead use `sincospi` in C and
+ *  Objective-C, and `simd::sincospi` in C++.                                 */
+static inline SIMD_NONCONST void __tg_sincospi(simd_float2 x, simd_float2 *sinp, simd_float2 *cosp);
+/*! @abstract Do not call this function; instead use `sincospi` in C and
+ *  Objective-C, and `simd::sincospi` in C++.                                 */
+static inline SIMD_NONCONST void __tg_sincospi(simd_float3 x, simd_float3 *sinp, simd_float3 *cosp);
+/*! @abstract Do not call this function; instead use `sincospi` in C and
+ *  Objective-C, and `simd::sincospi` in C++.                                 */
+static inline SIMD_NONCONST void __tg_sincospi(simd_float4 x, simd_float4 *sinp, simd_float4 *cosp);
+/*! @abstract Do not call this function; instead use `sincospi` in C and
+ *  Objective-C, and `simd::sincospi` in C++.                                 */
+static inline SIMD_NONCONST void __tg_sincospi(simd_float8 x, simd_float8 *sinp, simd_float8 *cosp);
+/*! @abstract Do not call this function; instead use `sincospi` in C and
+ *  Objective-C, and `simd::sincospi` in C++.                                 */
+static inline SIMD_NONCONST void __tg_sincospi(simd_float16 x, simd_float16 *sinp, simd_float16 *cosp);
+/*! @abstract Do not call this function; instead use `sincospi` in C and
+ *  Objective-C, and `simd::sincospi` in C++.                                 */
+static inline SIMD_NONCONST void __tg_sincospi(simd_double2 x, simd_double2 *sinp, simd_double2 *cosp);
+/*! @abstract Do not call this function; instead use `sincospi` in C and
+ *  Objective-C, and `simd::sincospi` in C++.                                 */
+static inline SIMD_NONCONST void __tg_sincospi(simd_double3 x, simd_double3 *sinp, simd_double3 *cosp);
+/*! @abstract Do not call this function; instead use `sincospi` in C and
+ *  Objective-C, and `simd::sincospi` in C++.                                 */
+static inline SIMD_NONCONST void __tg_sincospi(simd_double4 x, simd_double4 *sinp, simd_double4 *cosp);
+/*! @abstract Do not call this function; instead use `sincospi` in C and
+ *  Objective-C, and `simd::sincospi` in C++.                                 */
+static inline SIMD_NONCONST void __tg_sincospi(simd_double8 x, simd_double8 *sinp, simd_double8 *cosp);
+
+#endif
+/*! @abstract Do not call this function; instead use `isfinite` in C and
+ *  Objective-C, and `simd::isfinite` in C++.                                 */
+static inline SIMD_CFUNC simd_int2 __tg_isfinite(simd_float2 x);
+/*! @abstract Do not call this function; instead use `isfinite` in C and
+ *  Objective-C, and `simd::isfinite` in C++.                                 */
+static inline SIMD_CFUNC simd_int3 __tg_isfinite(simd_float3 x);
+/*! @abstract Do not call this function; instead use `isfinite` in C and
+ *  Objective-C, and `simd::isfinite` in C++.                                 */
+static inline SIMD_CFUNC simd_int4 __tg_isfinite(simd_float4 x);
+/*! @abstract Do not call this function; instead use `isfinite` in C and
+ *  Objective-C, and `simd::isfinite` in C++.                                 */
+static inline SIMD_CFUNC simd_int8 __tg_isfinite(simd_float8 x);
+/*! @abstract Do not call this function; instead use `isfinite` in C and
+ *  Objective-C, and `simd::isfinite` in C++.                                 */
+static inline SIMD_CFUNC simd_int16 __tg_isfinite(simd_float16 x);
+/*! @abstract Do not call this function; instead use `isfinite` in C and
+ *  Objective-C, and `simd::isfinite` in C++.                                 */
+static inline SIMD_CFUNC simd_long2 __tg_isfinite(simd_double2 x);
+/*! @abstract Do not call this function; instead use `isfinite` in C and
+ *  Objective-C, and `simd::isfinite` in C++.                                 */
+static inline SIMD_CFUNC simd_long3 __tg_isfinite(simd_double3 x);
+/*! @abstract Do not call this function; instead use `isfinite` in C and
+ *  Objective-C, and `simd::isfinite` in C++.                                 */
+static inline SIMD_CFUNC simd_long4 __tg_isfinite(simd_double4 x);
+/*! @abstract Do not call this function; instead use `isfinite` in C and
+ *  Objective-C, and `simd::isfinite` in C++.                                 */
+static inline SIMD_CFUNC simd_long8 __tg_isfinite(simd_double8 x);
+
+/*! @abstract Do not call this function; instead use `isinf` in C and
+ *  Objective-C, and `simd::isinf` in C++.                                    */
+static inline SIMD_CFUNC simd_int2 __tg_isinf(simd_float2 x);
+/*! @abstract Do not call this function; instead use `isinf` in C and
+ *  Objective-C, and `simd::isinf` in C++.                                    */
+static inline SIMD_CFUNC simd_int3 __tg_isinf(simd_float3 x);
+/*! @abstract Do not call this function; instead use `isinf` in C and
+ *  Objective-C, and `simd::isinf` in C++.                                    */
+static inline SIMD_CFUNC simd_int4 __tg_isinf(simd_float4 x);
+/*! @abstract Do not call this function; instead use `isinf` in C and
+ *  Objective-C, and `simd::isinf` in C++.                                    */
+static inline SIMD_CFUNC simd_int8 __tg_isinf(simd_float8 x);
+/*! @abstract Do not call this function; instead use `isinf` in C and
+ *  Objective-C, and `simd::isinf` in C++.                                    */
+static inline SIMD_CFUNC simd_int16 __tg_isinf(simd_float16 x);
+/*! @abstract Do not call this function; instead use `isinf` in C and
+ *  Objective-C, and `simd::isinf` in C++.                                    */
+static inline SIMD_CFUNC simd_long2 __tg_isinf(simd_double2 x);
+/*! @abstract Do not call this function; instead use `isinf` in C and
+ *  Objective-C, and `simd::isinf` in C++.                                    */
+static inline SIMD_CFUNC simd_long3 __tg_isinf(simd_double3 x);
+/*! @abstract Do not call this function; instead use `isinf` in C and
+ *  Objective-C, and `simd::isinf` in C++.                                    */
+static inline SIMD_CFUNC simd_long4 __tg_isinf(simd_double4 x);
+/*! @abstract Do not call this function; instead use `isinf` in C and
+ *  Objective-C, and `simd::isinf` in C++.                                    */
+static inline SIMD_CFUNC simd_long8 __tg_isinf(simd_double8 x);
+
+/*! @abstract Do not call this function; instead use `isnan` in C and
+ *  Objective-C, and `simd::isnan` in C++.                                    */
+static inline SIMD_CFUNC simd_int2 __tg_isnan(simd_float2 x);
+/*! @abstract Do not call this function; instead use `isnan` in C and
+ *  Objective-C, and `simd::isnan` in C++.                                    */
+static inline SIMD_CFUNC simd_int3 __tg_isnan(simd_float3 x);
+/*! @abstract Do not call this function; instead use `isnan` in C and
+ *  Objective-C, and `simd::isnan` in C++.                                    */
+static inline SIMD_CFUNC simd_int4 __tg_isnan(simd_float4 x);
+/*! @abstract Do not call this function; instead use `isnan` in C and
+ *  Objective-C, and `simd::isnan` in C++.                                    */
+static inline SIMD_CFUNC simd_int8 __tg_isnan(simd_float8 x);
+/*! @abstract Do not call this function; instead use `isnan` in C and
+ *  Objective-C, and `simd::isnan` in C++.                                    */
+static inline SIMD_CFUNC simd_int16 __tg_isnan(simd_float16 x);
+/*! @abstract Do not call this function; instead use `isnan` in C and
+ *  Objective-C, and `simd::isnan` in C++.                                    */
+static inline SIMD_CFUNC simd_long2 __tg_isnan(simd_double2 x);
+/*! @abstract Do not call this function; instead use `isnan` in C and
+ *  Objective-C, and `simd::isnan` in C++.                                    */
+static inline SIMD_CFUNC simd_long3 __tg_isnan(simd_double3 x);
+/*! @abstract Do not call this function; instead use `isnan` in C and
+ *  Objective-C, and `simd::isnan` in C++.                                    */
+static inline SIMD_CFUNC simd_long4 __tg_isnan(simd_double4 x);
+/*! @abstract Do not call this function; instead use `isnan` in C and
+ *  Objective-C, and `simd::isnan` in C++.                                    */
+static inline SIMD_CFUNC simd_long8 __tg_isnan(simd_double8 x);
+
+/*! @abstract Do not call this function; instead use `isnormal` in C and
+ *  Objective-C, and `simd::isnormal` in C++.                                 */
+static inline SIMD_CFUNC simd_int2 __tg_isnormal(simd_float2 x);
+/*! @abstract Do not call this function; instead use `isnormal` in C and
+ *  Objective-C, and `simd::isnormal` in C++.                                 */
+static inline SIMD_CFUNC simd_int3 __tg_isnormal(simd_float3 x);
+/*! @abstract Do not call this function; instead use `isnormal` in C and
+ *  Objective-C, and `simd::isnormal` in C++.                                 */
+static inline SIMD_CFUNC simd_int4 __tg_isnormal(simd_float4 x);
+/*! @abstract Do not call this function; instead use `isnormal` in C and
+ *  Objective-C, and `simd::isnormal` in C++.                                 */
+static inline SIMD_CFUNC simd_int8 __tg_isnormal(simd_float8 x);
+/*! @abstract Do not call this function; instead use `isnormal` in C and
+ *  Objective-C, and `simd::isnormal` in C++.                                 */
+static inline SIMD_CFUNC simd_int16 __tg_isnormal(simd_float16 x);
+/*! @abstract Do not call this function; instead use `isnormal` in C and
+ *  Objective-C, and `simd::isnormal` in C++.                                 */
+static inline SIMD_CFUNC simd_long2 __tg_isnormal(simd_double2 x);
+/*! @abstract Do not call this function; instead use `isnormal` in C and
+ *  Objective-C, and `simd::isnormal` in C++.                                 */
+static inline SIMD_CFUNC simd_long3 __tg_isnormal(simd_double3 x);
+/*! @abstract Do not call this function; instead use `isnormal` in C and
+ *  Objective-C, and `simd::isnormal` in C++.                                 */
+static inline SIMD_CFUNC simd_long4 __tg_isnormal(simd_double4 x);
+/*! @abstract Do not call this function; instead use `isnormal` in C and
+ *  Objective-C, and `simd::isnormal` in C++.                                 */
+static inline SIMD_CFUNC simd_long8 __tg_isnormal(simd_double8 x);
+
+
 /*! @abstract Do not call this function; instead use `atan2` in C and
  *  Objective-C, and `simd::atan2` in C++.                                    */
 static inline SIMD_CFUNC simd_float2 __tg_atan2(simd_float2 y, simd_float2 x);
@@ -1402,189 +1602,225 @@ static inline SIMD_CFUNC simd_double8 simd_muladd(simd_double8 x, simd_double8 y
 
 #include <cmath>
 /*! @abstract Do not call this function directly; use simd::acos instead.     */
-static SIMD_CPPFUNC float __tg_acos(float x) { return ::acos(x); }
+static SIMD_CPPFUNC float __tg_acos(float x) { return ::acosf(x); }
 /*! @abstract Do not call this function directly; use simd::acos instead.     */
 static SIMD_CPPFUNC double __tg_acos(double x) { return ::acos(x); }
 /*! @abstract Do not call this function directly; use simd::asin instead.     */
-static SIMD_CPPFUNC float __tg_asin(float x) { return ::asin(x); }
+static SIMD_CPPFUNC float __tg_asin(float x) { return ::asinf(x); }
 /*! @abstract Do not call this function directly; use simd::asin instead.     */
 static SIMD_CPPFUNC double __tg_asin(double x) { return ::asin(x); }
 /*! @abstract Do not call this function directly; use simd::atan instead.     */
-static SIMD_CPPFUNC float __tg_atan(float x) { return ::atan(x); }
+static SIMD_CPPFUNC float __tg_atan(float x) { return ::atanf(x); }
 /*! @abstract Do not call this function directly; use simd::atan instead.     */
 static SIMD_CPPFUNC double __tg_atan(double x) { return ::atan(x); }
 /*! @abstract Do not call this function directly; use simd::cos instead.      */
-static SIMD_CPPFUNC float __tg_cos(float x) { return ::cos(x); }
+static SIMD_CPPFUNC float __tg_cos(float x) { return ::cosf(x); }
 /*! @abstract Do not call this function directly; use simd::cos instead.      */
 static SIMD_CPPFUNC double __tg_cos(double x) { return ::cos(x); }
 /*! @abstract Do not call this function directly; use simd::sin instead.      */
-static SIMD_CPPFUNC float __tg_sin(float x) { return ::sin(x); }
+static SIMD_CPPFUNC float __tg_sin(float x) { return ::sinf(x); }
 /*! @abstract Do not call this function directly; use simd::sin instead.      */
 static SIMD_CPPFUNC double __tg_sin(double x) { return ::sin(x); }
 /*! @abstract Do not call this function directly; use simd::tan instead.      */
-static SIMD_CPPFUNC float __tg_tan(float x) { return ::tan(x); }
+static SIMD_CPPFUNC float __tg_tan(float x) { return ::tanf(x); }
 /*! @abstract Do not call this function directly; use simd::tan instead.      */
 static SIMD_CPPFUNC double __tg_tan(double x) { return ::tan(x); }
 /*! @abstract Do not call this function directly; use simd::cospi instead.    */
-static SIMD_CPPFUNC float __tg_cospi(float x) { return ::__cospi(x); }
+static SIMD_CPPFUNC float __tg_cospi(float x) { return ::__cospif(x); }
 /*! @abstract Do not call this function directly; use simd::cospi instead.    */
 static SIMD_CPPFUNC double __tg_cospi(double x) { return ::__cospi(x); }
 /*! @abstract Do not call this function directly; use simd::sinpi instead.    */
-static SIMD_CPPFUNC float __tg_sinpi(float x) { return ::__sinpi(x); }
+static SIMD_CPPFUNC float __tg_sinpi(float x) { return ::__sinpif(x); }
 /*! @abstract Do not call this function directly; use simd::sinpi instead.    */
 static SIMD_CPPFUNC double __tg_sinpi(double x) { return ::__sinpi(x); }
 /*! @abstract Do not call this function directly; use simd::tanpi instead.    */
-static SIMD_CPPFUNC float __tg_tanpi(float x) { return ::__tanpi(x); }
+static SIMD_CPPFUNC float __tg_tanpi(float x) { return ::__tanpif(x); }
 /*! @abstract Do not call this function directly; use simd::tanpi instead.    */
 static SIMD_CPPFUNC double __tg_tanpi(double x) { return ::__tanpi(x); }
 /*! @abstract Do not call this function directly; use simd::acosh instead.    */
-static SIMD_CPPFUNC float __tg_acosh(float x) { return ::acosh(x); }
+static SIMD_CPPFUNC float __tg_acosh(float x) { return ::acoshf(x); }
 /*! @abstract Do not call this function directly; use simd::acosh instead.    */
 static SIMD_CPPFUNC double __tg_acosh(double x) { return ::acosh(x); }
 /*! @abstract Do not call this function directly; use simd::asinh instead.    */
-static SIMD_CPPFUNC float __tg_asinh(float x) { return ::asinh(x); }
+static SIMD_CPPFUNC float __tg_asinh(float x) { return ::asinhf(x); }
 /*! @abstract Do not call this function directly; use simd::asinh instead.    */
 static SIMD_CPPFUNC double __tg_asinh(double x) { return ::asinh(x); }
 /*! @abstract Do not call this function directly; use simd::atanh instead.    */
-static SIMD_CPPFUNC float __tg_atanh(float x) { return ::atanh(x); }
+static SIMD_CPPFUNC float __tg_atanh(float x) { return ::atanhf(x); }
 /*! @abstract Do not call this function directly; use simd::atanh instead.    */
 static SIMD_CPPFUNC double __tg_atanh(double x) { return ::atanh(x); }
 /*! @abstract Do not call this function directly; use simd::cosh instead.     */
-static SIMD_CPPFUNC float __tg_cosh(float x) { return ::cosh(x); }
+static SIMD_CPPFUNC float __tg_cosh(float x) { return ::coshf(x); }
 /*! @abstract Do not call this function directly; use simd::cosh instead.     */
 static SIMD_CPPFUNC double __tg_cosh(double x) { return ::cosh(x); }
 /*! @abstract Do not call this function directly; use simd::sinh instead.     */
-static SIMD_CPPFUNC float __tg_sinh(float x) { return ::sinh(x); }
+static SIMD_CPPFUNC float __tg_sinh(float x) { return ::sinhf(x); }
 /*! @abstract Do not call this function directly; use simd::sinh instead.     */
 static SIMD_CPPFUNC double __tg_sinh(double x) { return ::sinh(x); }
 /*! @abstract Do not call this function directly; use simd::tanh instead.     */
-static SIMD_CPPFUNC float __tg_tanh(float x) { return ::tanh(x); }
+static SIMD_CPPFUNC float __tg_tanh(float x) { return ::tanhf(x); }
 /*! @abstract Do not call this function directly; use simd::tanh instead.     */
 static SIMD_CPPFUNC double __tg_tanh(double x) { return ::tanh(x); }
 /*! @abstract Do not call this function directly; use simd::exp instead.      */
-static SIMD_CPPFUNC float __tg_exp(float x) { return ::exp(x); }
+static SIMD_CPPFUNC float __tg_exp(float x) { return ::expf(x); }
 /*! @abstract Do not call this function directly; use simd::exp instead.      */
 static SIMD_CPPFUNC double __tg_exp(double x) { return ::exp(x); }
 /*! @abstract Do not call this function directly; use simd::exp2 instead.     */
-static SIMD_CPPFUNC float __tg_exp2(float x) { return ::exp2(x); }
+static SIMD_CPPFUNC float __tg_exp2(float x) { return ::exp2f(x); }
 /*! @abstract Do not call this function directly; use simd::exp2 instead.     */
 static SIMD_CPPFUNC double __tg_exp2(double x) { return ::exp2(x); }
 /*! @abstract Do not call this function directly; use simd::exp10 instead.    */
-static SIMD_CPPFUNC float __tg_exp10(float x) { return ::__exp10(x); }
+static SIMD_CPPFUNC float __tg_exp10(float x) { return ::__exp10f(x); }
 /*! @abstract Do not call this function directly; use simd::exp10 instead.    */
 static SIMD_CPPFUNC double __tg_exp10(double x) { return ::__exp10(x); }
 /*! @abstract Do not call this function directly; use simd::expm1 instead.    */
-static SIMD_CPPFUNC float __tg_expm1(float x) { return ::expm1(x); }
+static SIMD_CPPFUNC float __tg_expm1(float x) { return ::expm1f(x); }
 /*! @abstract Do not call this function directly; use simd::expm1 instead.    */
 static SIMD_CPPFUNC double __tg_expm1(double x) { return ::expm1(x); }
 /*! @abstract Do not call this function directly; use simd::log instead.      */
-static SIMD_CPPFUNC float __tg_log(float x) { return ::log(x); }
+static SIMD_CPPFUNC float __tg_log(float x) { return ::logf(x); }
 /*! @abstract Do not call this function directly; use simd::log instead.      */
 static SIMD_CPPFUNC double __tg_log(double x) { return ::log(x); }
 /*! @abstract Do not call this function directly; use simd::log2 instead.     */
-static SIMD_CPPFUNC float __tg_log2(float x) { return ::log2(x); }
+static SIMD_CPPFUNC float __tg_log2(float x) { return ::log2f(x); }
 /*! @abstract Do not call this function directly; use simd::log2 instead.     */
 static SIMD_CPPFUNC double __tg_log2(double x) { return ::log2(x); }
 /*! @abstract Do not call this function directly; use simd::log10 instead.    */
-static SIMD_CPPFUNC float __tg_log10(float x) { return ::log10(x); }
+static SIMD_CPPFUNC float __tg_log10(float x) { return ::log10f(x); }
 /*! @abstract Do not call this function directly; use simd::log10 instead.    */
 static SIMD_CPPFUNC double __tg_log10(double x) { return ::log10(x); }
 /*! @abstract Do not call this function directly; use simd::log1p instead.    */
-static SIMD_CPPFUNC float __tg_log1p(float x) { return ::log1p(x); }
+static SIMD_CPPFUNC float __tg_log1p(float x) { return ::log1pf(x); }
 /*! @abstract Do not call this function directly; use simd::log1p instead.    */
 static SIMD_CPPFUNC double __tg_log1p(double x) { return ::log1p(x); }
 /*! @abstract Do not call this function directly; use simd::fabs instead.     */
-static SIMD_CPPFUNC float __tg_fabs(float x) { return ::fabs(x); }
+static SIMD_CPPFUNC float __tg_fabs(float x) { return ::fabsf(x); }
 /*! @abstract Do not call this function directly; use simd::fabs instead.     */
 static SIMD_CPPFUNC double __tg_fabs(double x) { return ::fabs(x); }
 /*! @abstract Do not call this function directly; use simd::cbrt instead.     */
-static SIMD_CPPFUNC float __tg_cbrt(float x) { return ::cbrt(x); }
+static SIMD_CPPFUNC float __tg_cbrt(float x) { return ::cbrtf(x); }
 /*! @abstract Do not call this function directly; use simd::cbrt instead.     */
 static SIMD_CPPFUNC double __tg_cbrt(double x) { return ::cbrt(x); }
 /*! @abstract Do not call this function directly; use simd::sqrt instead.     */
-static SIMD_CPPFUNC float __tg_sqrt(float x) { return ::sqrt(x); }
+static SIMD_CPPFUNC float __tg_sqrt(float x) { return ::sqrtf(x); }
 /*! @abstract Do not call this function directly; use simd::sqrt instead.     */
 static SIMD_CPPFUNC double __tg_sqrt(double x) { return ::sqrt(x); }
 /*! @abstract Do not call this function directly; use simd::erf instead.      */
-static SIMD_CPPFUNC float __tg_erf(float x) { return ::erf(x); }
+static SIMD_CPPFUNC float __tg_erf(float x) { return ::erff(x); }
 /*! @abstract Do not call this function directly; use simd::erf instead.      */
 static SIMD_CPPFUNC double __tg_erf(double x) { return ::erf(x); }
 /*! @abstract Do not call this function directly; use simd::erfc instead.     */
-static SIMD_CPPFUNC float __tg_erfc(float x) { return ::erfc(x); }
+static SIMD_CPPFUNC float __tg_erfc(float x) { return ::erfcf(x); }
 /*! @abstract Do not call this function directly; use simd::erfc instead.     */
 static SIMD_CPPFUNC double __tg_erfc(double x) { return ::erfc(x); }
 /*! @abstract Do not call this function directly; use simd::tgamma instead.   */
-static SIMD_CPPFUNC float __tg_tgamma(float x) { return ::tgamma(x); }
+static SIMD_CPPFUNC float __tg_tgamma(float x) { return ::tgammaf(x); }
 /*! @abstract Do not call this function directly; use simd::tgamma instead.   */
 static SIMD_CPPFUNC double __tg_tgamma(double x) { return ::tgamma(x); }
+/*! @abstract Do not call this function directly; use simd::lgamma instead.   */
+static SIMD_CPPFUNC float __tg_lgamma(float x) { return ::lgammaf(x); }
+/*! @abstract Do not call this function directly; use simd::lgamma instead.   */
+static SIMD_CPPFUNC double __tg_lgamma(double x) { return ::lgamma(x); }
 /*! @abstract Do not call this function directly; use simd::ceil instead.     */
-static SIMD_CPPFUNC float __tg_ceil(float x) { return ::ceil(x); }
+static SIMD_CPPFUNC float __tg_ceil(float x) { return ::ceilf(x); }
 /*! @abstract Do not call this function directly; use simd::ceil instead.     */
 static SIMD_CPPFUNC double __tg_ceil(double x) { return ::ceil(x); }
 /*! @abstract Do not call this function directly; use simd::floor instead.    */
-static SIMD_CPPFUNC float __tg_floor(float x) { return ::floor(x); }
+static SIMD_CPPFUNC float __tg_floor(float x) { return ::floorf(x); }
 /*! @abstract Do not call this function directly; use simd::floor instead.    */
 static SIMD_CPPFUNC double __tg_floor(double x) { return ::floor(x); }
 /*! @abstract Do not call this function directly; use simd::rint instead.     */
-static SIMD_CPPFUNC float __tg_rint(float x) { return ::rint(x); }
+static SIMD_CPPFUNC float __tg_rint(float x) { return ::rintf(x); }
 /*! @abstract Do not call this function directly; use simd::rint instead.     */
 static SIMD_CPPFUNC double __tg_rint(double x) { return ::rint(x); }
 /*! @abstract Do not call this function directly; use simd::round instead.    */
-static SIMD_CPPFUNC float __tg_round(float x) { return ::round(x); }
+static SIMD_CPPFUNC float __tg_round(float x) { return ::roundf(x); }
 /*! @abstract Do not call this function directly; use simd::round instead.    */
 static SIMD_CPPFUNC double __tg_round(double x) { return ::round(x); }
 /*! @abstract Do not call this function directly; use simd::trunc instead.    */
-static SIMD_CPPFUNC float __tg_trunc(float x) { return ::trunc(x); }
+static SIMD_CPPFUNC float __tg_trunc(float x) { return ::truncf(x); }
 /*! @abstract Do not call this function directly; use simd::trunc instead.    */
 static SIMD_CPPFUNC double __tg_trunc(double x) { return ::trunc(x); }
+#if SIMD_LIBRARY_VERSION >= 5
+/*! @abstract Do not call this function directly; use simd::sincos instead.   */
+static SIMD_INLINE SIMD_NODEBUG void __tg_sincos(float x, float *sinp, float *cosp) { ::__sincosf(x, sinp, cosp); }
+/*! @abstract Do not call this function directly; use simd::sincos instead.   */
+static SIMD_INLINE SIMD_NODEBUG void __tg_sincos(double x, double *sinp, double *cosp) { ::__sincos(x, sinp, cosp); }
+/*! @abstract Do not call this function directly; use simd::sincospi
+ *  instead.                                                                  */
+static SIMD_INLINE SIMD_NODEBUG void __tg_sincospi(float x, float *sinp, float *cosp) { ::__sincospif(x, sinp, cosp); }
+/*! @abstract Do not call this function directly; use simd::sincospi
+ *  instead.                                                                  */
+static SIMD_INLINE SIMD_NODEBUG void __tg_sincospi(double x, double *sinp, double *cosp) { ::__sincospi(x, sinp, cosp); }
+#endif
+/*! @abstract Do not call this function directly; use simd::isfinite
+ *  instead.                                                                  */
+static SIMD_CPPFUNC float __tg_isfinite(float x) { return ::isfinite(x); }
+/*! @abstract Do not call this function directly; use simd::isfinite
+ *  instead.                                                                  */
+static SIMD_CPPFUNC double __tg_isfinite(double x) { return ::isfinite(x); }
+/*! @abstract Do not call this function directly; use simd::isinf instead.    */
+static SIMD_CPPFUNC float __tg_isinf(float x) { return ::isinf(x); }
+/*! @abstract Do not call this function directly; use simd::isinf instead.    */
+static SIMD_CPPFUNC double __tg_isinf(double x) { return ::isinf(x); }
+/*! @abstract Do not call this function directly; use simd::isnan instead.    */
+static SIMD_CPPFUNC float __tg_isnan(float x) { return ::isnan(x); }
+/*! @abstract Do not call this function directly; use simd::isnan instead.    */
+static SIMD_CPPFUNC double __tg_isnan(double x) { return ::isnan(x); }
+/*! @abstract Do not call this function directly; use simd::isnormal
+ *  instead.                                                                  */
+static SIMD_CPPFUNC float __tg_isnormal(float x) { return ::isnormal(x); }
+/*! @abstract Do not call this function directly; use simd::isnormal
+ *  instead.                                                                  */
+static SIMD_CPPFUNC double __tg_isnormal(double x) { return ::isnormal(x); }
 /*! @abstract Do not call this function directly; use simd::atan2 instead.    */
-static SIMD_CPPFUNC float __tg_atan2(float x, float y) { return ::atan2(x, y); }
+static SIMD_CPPFUNC float __tg_atan2(float x, float y) { return ::atan2f(x, y); }
 /*! @abstract Do not call this function directly; use simd::atan2 instead.    */
-static SIMD_CPPFUNC double __tg_atan2(double x, float y) { return ::atan2(x, y); }
+static SIMD_CPPFUNC double __tg_atan2(double x, double y) { return ::atan2(x, y); }
 /*! @abstract Do not call this function directly; use simd::hypot instead.    */
-static SIMD_CPPFUNC float __tg_hypot(float x, float y) { return ::hypot(x, y); }
+static SIMD_CPPFUNC float __tg_hypot(float x, float y) { return ::hypotf(x, y); }
 /*! @abstract Do not call this function directly; use simd::hypot instead.    */
-static SIMD_CPPFUNC double __tg_hypot(double x, float y) { return ::hypot(x, y); }
+static SIMD_CPPFUNC double __tg_hypot(double x, double y) { return ::hypot(x, y); }
 /*! @abstract Do not call this function directly; use simd::pow instead.      */
-static SIMD_CPPFUNC float __tg_pow(float x, float y) { return ::pow(x, y); }
+static SIMD_CPPFUNC float __tg_pow(float x, float y) { return ::powf(x, y); }
 /*! @abstract Do not call this function directly; use simd::pow instead.      */
-static SIMD_CPPFUNC double __tg_pow(double x, float y) { return ::pow(x, y); }
+static SIMD_CPPFUNC double __tg_pow(double x, double y) { return ::pow(x, y); }
 /*! @abstract Do not call this function directly; use simd::fmod instead.     */
-static SIMD_CPPFUNC float __tg_fmod(float x, float y) { return ::fmod(x, y); }
+static SIMD_CPPFUNC float __tg_fmod(float x, float y) { return ::fmodf(x, y); }
 /*! @abstract Do not call this function directly; use simd::fmod instead.     */
-static SIMD_CPPFUNC double __tg_fmod(double x, float y) { return ::fmod(x, y); }
+static SIMD_CPPFUNC double __tg_fmod(double x, double y) { return ::fmod(x, y); }
 /*! @abstract Do not call this function directly; use simd::remainder
  *  instead.                                                                  */
-static SIMD_CPPFUNC float __tg_remainder(float x, float y) { return ::remainder(x, y); }
+static SIMD_CPPFUNC float __tg_remainder(float x, float y) { return ::remainderf(x, y); }
 /*! @abstract Do not call this function directly; use simd::remainder
  *  instead.                                                                  */
-static SIMD_CPPFUNC double __tg_remainder(double x, float y) { return ::remainder(x, y); }
+static SIMD_CPPFUNC double __tg_remainder(double x, double y) { return ::remainder(x, y); }
 /*! @abstract Do not call this function directly; use simd::copysign
  *  instead.                                                                  */
-static SIMD_CPPFUNC float __tg_copysign(float x, float y) { return ::copysign(x, y); }
+static SIMD_CPPFUNC float __tg_copysign(float x, float y) { return ::copysignf(x, y); }
 /*! @abstract Do not call this function directly; use simd::copysign
  *  instead.                                                                  */
-static SIMD_CPPFUNC double __tg_copysign(double x, float y) { return ::copysign(x, y); }
+static SIMD_CPPFUNC double __tg_copysign(double x, double y) { return ::copysign(x, y); }
 /*! @abstract Do not call this function directly; use simd::nextafter
  *  instead.                                                                  */
-static SIMD_CPPFUNC float __tg_nextafter(float x, float y) { return ::nextafter(x, y); }
+static SIMD_CPPFUNC float __tg_nextafter(float x, float y) { return ::nextafterf(x, y); }
 /*! @abstract Do not call this function directly; use simd::nextafter
  *  instead.                                                                  */
-static SIMD_CPPFUNC double __tg_nextafter(double x, float y) { return ::nextafter(x, y); }
+static SIMD_CPPFUNC double __tg_nextafter(double x, double y) { return ::nextafter(x, y); }
 /*! @abstract Do not call this function directly; use simd::fdim instead.     */
-static SIMD_CPPFUNC float __tg_fdim(float x, float y) { return ::fdim(x, y); }
+static SIMD_CPPFUNC float __tg_fdim(float x, float y) { return ::fdimf(x, y); }
 /*! @abstract Do not call this function directly; use simd::fdim instead.     */
-static SIMD_CPPFUNC double __tg_fdim(double x, float y) { return ::fdim(x, y); }
+static SIMD_CPPFUNC double __tg_fdim(double x, double y) { return ::fdim(x, y); }
 /*! @abstract Do not call this function directly; use simd::fmax instead.     */
-static SIMD_CPPFUNC float __tg_fmax(float x, float y) { return ::fmax(x, y); }
+static SIMD_CPPFUNC float __tg_fmax(float x, float y) { return ::fmaxf(x, y); }
 /*! @abstract Do not call this function directly; use simd::fmax instead.     */
-static SIMD_CPPFUNC double __tg_fmax(double x, float y) { return ::fmax(x, y); }
+static SIMD_CPPFUNC double __tg_fmax(double x, double y) { return ::fmax(x, y); }
 /*! @abstract Do not call this function directly; use simd::fmin instead.     */
-static SIMD_CPPFUNC float __tg_fmin(float x, float y) { return ::fmin(x, y); }
+static SIMD_CPPFUNC float __tg_fmin(float x, float y) { return ::fminf(x, y); }
 /*! @abstract Do not call this function directly; use simd::fmin instead.     */
-static SIMD_CPPFUNC double __tg_fmin(double x, float y) { return ::fmin(x, y); }
+static SIMD_CPPFUNC double __tg_fmin(double x, double y) { return ::fmin(x, y); }
 /*! @abstract Do not call this function directly; use simd::fma instead.      */
-static SIMD_CPPFUNC float __tg_fma(float x, float y, float z) { return ::fma(x, y, z); }
+static SIMD_CPPFUNC float __tg_fma(float x, float y, float z) { return ::fmaf(x, y, z); }
 /*! @abstract Do not call this function directly; use simd::fma instead.      */
 static SIMD_CPPFUNC double __tg_fma(double x, double y, double z) { return ::fma(x, y, z); }
   
@@ -1742,6 +1978,11 @@ namespace simd {
   template <typename fptypeN>
   static SIMD_CPPFUNC fptypeN tgamma(fptypeN x) { return ::__tg_tgamma(x); }
   
+/*! @abstract Generalizes the <cmath> function lgamma to operate on vectors
+ *  of floats and doubles.                                                    */
+  template <typename fptypeN>
+  static SIMD_CPPFUNC fptypeN lgamma(fptypeN x) { return ::__tg_lgamma(x); }
+  
 /*! @abstract Generalizes the <cmath> function ceil to operate on vectors of
  *  floats and doubles.                                                       */
   template <typename fptypeN>
@@ -1767,6 +2008,44 @@ namespace simd {
   template <typename fptypeN>
   static SIMD_CPPFUNC fptypeN trunc(fptypeN x) { return ::__tg_trunc(x); }
   
+#if SIMD_LIBRARY_VERSION >= 5
+/*! @abstract Computes sincos more efficiently than separate computations.    */
+  template <typename fptypeN>
+  static SIMD_INLINE SIMD_NODEBUG void sincos(fptypeN x, fptypeN *sinp, fptypeN *cosp) { ::__tg_sincos(x, sinp, cosp); }
+
+/*! @abstract Computes sincospi more efficiently than separate computations.  */
+  template <typename fptypeN>
+  static SIMD_INLINE SIMD_NODEBUG void sincospi(fptypeN x, fptypeN *sinp, fptypeN *cosp) { ::__tg_sincospi(x, sinp, cosp); }
+
+#endif
+/*! @abstract Generalizes the <cmath> function isfinite to operate on
+ *  vectors of floats and doubles.                                            */
+  template <typename fptypeN>
+  static SIMD_CPPFUNC
+  typename std::enable_if<std::is_floating_point<typename traits<fptypeN>::scalar_t>::value, typename traits<fptypeN>::mask_t>::type
+  isfinite(fptypeN x) { return ::__tg_isfinite(x); }
+
+/*! @abstract Generalizes the <cmath> function isinf to operate on vectors
+ *  of floats and doubles.                                                    */
+  template <typename fptypeN>
+  static SIMD_CPPFUNC
+  typename std::enable_if<std::is_floating_point<typename traits<fptypeN>::scalar_t>::value, typename traits<fptypeN>::mask_t>::type
+  isinf(fptypeN x) { return ::__tg_isinf(x); }
+
+/*! @abstract Generalizes the <cmath> function isnan to operate on vectors
+ *  of floats and doubles.                                                    */
+  template <typename fptypeN>
+  static SIMD_CPPFUNC
+  typename std::enable_if<std::is_floating_point<typename traits<fptypeN>::scalar_t>::value, typename traits<fptypeN>::mask_t>::type
+  isnan(fptypeN x) { return ::__tg_isnan(x); }
+
+/*! @abstract Generalizes the <cmath> function isnormal to operate on
+ *  vectors of floats and doubles.                                            */
+  template <typename fptypeN>
+  static SIMD_CPPFUNC
+  typename std::enable_if<std::is_floating_point<typename traits<fptypeN>::scalar_t>::value, typename traits<fptypeN>::mask_t>::type
+  isnormal(fptypeN x) { return ::__tg_isnormal(x); }
+
 /*! @abstract Generalizes the <cmath> function atan2 to operate on vectors
  *  of floats and doubles.                                                    */
   template <typename fptypeN>
@@ -1876,6 +2155,26 @@ static inline SIMD_CFUNC double __tg_tanpi(double x) { return __tanpi(x); }
  *  floats and doubles as provided by `<simd/simd.h>`.                        */
 #define tanpi(__x) __tg_tanpi(__tg_promote1((__x))(__x))
 
+#if SIMD_LIBRARY_VERSION >= 5
+static inline SIMD_NONCONST void __tg_sincos(float x, float *sinp, float *cosp) { __sincosf(x, sinp, cosp); }
+static inline SIMD_NONCONST void __tg_sincos(double x, double *sinp, double *cosp) { __sincos(x, sinp, cosp); }
+#undef sincos
+/*! @abstract `sincos(x)` computes `sin(x)` and `cos(x)` more efficiently.
+ *
+ *  @discussion Defined for `float` and `double` as well as vectors of
+ *  floats and doubles as provided by `<simd/simd.h>`.                        */
+#define sincos(__x, __sinp, __cosp) __tg_sincos(__tg_promote1((__x))(__x), __sinp, __cosp)
+
+static inline SIMD_NONCONST void __tg_sincospi(float x, float *sinp, float *cosp) { __sincospif(x, sinp, cosp); }
+static inline SIMD_NONCONST void __tg_sincospi(double x, double *sinp, double *cosp) { __sincospi(x, sinp, cosp); }
+#undef sincospi
+/*! @abstract `sincospi(x)` computes `sin(pi * x)` and `cos(pi * x)` more efficiently.
+ *
+ *  @discussion Defined for `float` and `double` as well as vectors of
+ *  floats and doubles as provided by `<simd/simd.h>`.                        */
+#define sincospi(__x, __sinp, __cosp) __tg_sincospi(__tg_promote1((__x))(__x), __sinp, __cosp)
+#endif // SIMD_LIBRARY_VERSION >= 5
+
 static inline SIMD_CFUNC float __tg_exp10(float x) { return __exp10f(x); }
 static inline SIMD_CFUNC double __tg_exp10(double x) { return __exp10(x); }
 #undef exp10
@@ -1887,7 +2186,89 @@ static inline SIMD_CFUNC double __tg_exp10(double x) { return __exp10(x); }
 #define exp10(__x) __tg_exp10(__tg_promote1((__x))(__x))
 #endif
 
-  
+#if (defined(__GNUC__) && 0 == __FINITE_MATH_ONLY__)
+static inline SIMD_CFUNC int __tg_isfinite(float x) { return __inline_isfinitef(x); }
+static inline SIMD_CFUNC int __tg_isfinite(double x) { return __inline_isfinited(x); }
+static inline SIMD_CFUNC int __tg_isfinite(long double x) { return __inline_isfinitel(x); }
+#undef isfinite
+/*! @abstract `__tg_isfinite(x)` determines if x is a finite value.
+ *
+ *  @discussion Defined for `float`, `double` and `long double` as well as vectors of floats
+ *  and doubles as provided by `<simd/simd.h>`.                               */
+#define isfinite(__x) __tg_isfinite(__tg_promote1((__x))(__x))
+
+static inline SIMD_CFUNC int __tg_isinf(float x) { return __inline_isinff(x); }
+static inline SIMD_CFUNC int __tg_isinf(double x) { return __inline_isinfd(x); }
+static inline SIMD_CFUNC int __tg_isinf(long double x) { return __inline_isinfl(x); }
+#undef isinf
+/*! @abstract `__tg_isinf(x)` determines if x is positive or negative infinity.
+ *
+ *  @discussion Defined for `float`, `double` and `long double` as well as vectors of floats
+ *  and doubles as provided by `<simd/simd.h>`.                               */
+#define isinf(__x) __tg_isinf(__tg_promote1((__x))(__x))
+
+static inline SIMD_CFUNC int __tg_isnan(float x) { return __inline_isnanf(x); }
+static inline SIMD_CFUNC int __tg_isnan(double x) { return __inline_isnand(x); }
+static inline SIMD_CFUNC int __tg_isnan(long double x) { return __inline_isnanl(x); }
+#undef isnan
+/*! @abstract `__tg_isnan(x)` determines if x is a not-a-number (NaN) value.
+ *
+ *  @discussion Defined for `float`, `double` and `long double` as well as vectors of floats
+ *  and doubles as provided by `<simd/simd.h>`.                               */
+#define isnan(__x) __tg_isnan(__tg_promote1((__x))(__x))
+
+static inline SIMD_CFUNC int __tg_isnormal(float x) { return __inline_isnormalf(x); }
+static inline SIMD_CFUNC int __tg_isnormal(double x) { return __inline_isnormald(x); }
+static inline SIMD_CFUNC int __tg_isnormal(long double x) { return __inline_isnormall(x); }
+#undef isnormal
+/*! @abstract `__tg_isnormal(x)` determines if x is a normal value.
+ *
+ *  @discussion Defined for `float`, `double` and `long double` as well as vectors of floats
+ *  and doubles as provided by `<simd/simd.h>`.                               */
+#define isnormal(__x) __tg_isnormal(__tg_promote1((__x))(__x))
+
+#else /* defined(__GNUC__) && 0 == __FINITE_MATH_ONLY__ */
+
+static inline SIMD_CFUNC int __tg_isfinite(float x) { return __isfinitef(x); }
+static inline SIMD_CFUNC int __tg_isfinite(double x) { return __isfinited(x); }
+static inline SIMD_CFUNC int __tg_isfinite(long double x) { return __isfinitel(x); }
+#undef isfinite
+/*! @abstract `__tg_isfinite(x)` determines if x is a finite value.
+ *
+ *  @discussion Defined for `float`, `double` and `long double` as well as vectors of floats
+ *  and doubles as provided by `<simd/simd.h>`.                               */
+#define isfinite(__x) __tg_isfinite(__tg_promote1((__x))(__x))
+
+static inline SIMD_CFUNC int __tg_isinf(float x) { return __isinff(x); }
+static inline SIMD_CFUNC int __tg_isinf(double x) { return __isinfd(x); }
+static inline SIMD_CFUNC int __tg_isinf(long double x) { return __isinfl(x); }
+#undef isinf
+/*! @abstract `__tg_isinf(x)` determines if x is positive or negative infinity.
+ *
+ *  @discussion Defined for `float`, `double` and `long double` as well as vectors of floats
+ *  and doubles as provided by `<simd/simd.h>`.                               */
+#define isinf(__x) __tg_isinf(__tg_promote1((__x))(__x))
+
+static inline SIMD_CFUNC int __tg_isnan(float x) { return __isnanf(x); }
+static inline SIMD_CFUNC int __tg_isnan(double x) { return __isnand(x); }
+static inline SIMD_CFUNC int __tg_isnan(long double x) { return __isnanl(x); }
+#undef isnan
+/*! @abstract `__tg_isnan(x)` determines if x is a not-a-number (NaN) value.
+ *
+ *  @discussion Defined for `float`, `double` and `long double` as well as vectors of floats
+ *  and doubles as provided by `<simd/simd.h>`.                               */
+#define isnan(__x) __tg_isnan(__tg_promote1((__x))(__x))
+
+static inline SIMD_CFUNC int __tg_isnormal(float x) { return __isnormalf(x); }
+static inline SIMD_CFUNC int __tg_isnormal(double x) { return __isnormald(x); }
+static inline SIMD_CFUNC int __tg_isnormal(long double x) { return __isnormall(x); }
+#undef isnormal
+/*! @abstract `__tg_isnormal(x)` determines if x is a normal value.
+ *
+ *  @discussion Defined for `float`, `double` and `long double` as well as vectors of floats
+ *  and doubles as provided by `<simd/simd.h>`.                               */
+#define isnormal(__x) __tg_isnormal(__tg_promote1((__x))(__x))
+#endif /* defined(__GNUC__) && 0 == __FINITE_MATH_ONLY__ */
 #endif /* !__cplusplus */
   
 #pragma mark - fabs implementation
@@ -1896,11 +2277,55 @@ static inline SIMD_CFUNC simd_float3 __tg_fabs(simd_float3 x) { return simd_bits
 static inline SIMD_CFUNC simd_float4 __tg_fabs(simd_float4 x) { return simd_bitselect(0.0, x, 0x7fffffff); }
 static inline SIMD_CFUNC simd_float8 __tg_fabs(simd_float8 x) { return simd_bitselect(0.0, x, 0x7fffffff); }
 static inline SIMD_CFUNC simd_float16 __tg_fabs(simd_float16 x) { return simd_bitselect(0.0, x, 0x7fffffff); }
-static inline SIMD_CFUNC simd_double2 __tg_fabs(simd_double2 x) { return simd_bitselect(0.0, x, 0x7fffffffffffffffL); }
-static inline SIMD_CFUNC simd_double3 __tg_fabs(simd_double3 x) { return simd_bitselect(0.0, x, 0x7fffffffffffffffL); }
-static inline SIMD_CFUNC simd_double4 __tg_fabs(simd_double4 x) { return simd_bitselect(0.0, x, 0x7fffffffffffffffL); }
-static inline SIMD_CFUNC simd_double8 __tg_fabs(simd_double8 x) { return simd_bitselect(0.0, x, 0x7fffffffffffffffL); }
+static inline SIMD_CFUNC simd_double2 __tg_fabs(simd_double2 x) { return simd_bitselect(0.0, x, 0x7fffffffffffffff); }
+static inline SIMD_CFUNC simd_double3 __tg_fabs(simd_double3 x) { return simd_bitselect(0.0, x, 0x7fffffffffffffff); }
+static inline SIMD_CFUNC simd_double4 __tg_fabs(simd_double4 x) { return simd_bitselect(0.0, x, 0x7fffffffffffffff); }
+static inline SIMD_CFUNC simd_double8 __tg_fabs(simd_double8 x) { return simd_bitselect(0.0, x, 0x7fffffffffffffff); }
   
+#pragma mark - isfinite implementation
+static inline SIMD_CFUNC simd_int2 __tg_isfinite(simd_float2 x) { return x == x && __tg_fabs(x) != (simd_float2)INFINITY; }
+static inline SIMD_CFUNC simd_int3 __tg_isfinite(simd_float3 x) { return x == x && __tg_fabs(x) != (simd_float3)INFINITY; }
+static inline SIMD_CFUNC simd_int4 __tg_isfinite(simd_float4 x) { return x == x && __tg_fabs(x) != (simd_float4)INFINITY; }
+static inline SIMD_CFUNC simd_int8 __tg_isfinite(simd_float8 x) { return x == x && __tg_fabs(x) != (simd_float8)INFINITY; }
+static inline SIMD_CFUNC simd_int16 __tg_isfinite(simd_float16 x) { return x == x && __tg_fabs(x) != (simd_float16)INFINITY; }
+static inline SIMD_CFUNC simd_long2 __tg_isfinite(simd_double2 x) { return x == x && __tg_fabs(x) != (simd_double2)INFINITY; }
+static inline SIMD_CFUNC simd_long3 __tg_isfinite(simd_double3 x) { return x == x && __tg_fabs(x) != (simd_double3)INFINITY; }
+static inline SIMD_CFUNC simd_long4 __tg_isfinite(simd_double4 x) { return x == x && __tg_fabs(x) != (simd_double4)INFINITY; }
+static inline SIMD_CFUNC simd_long8 __tg_isfinite(simd_double8 x) { return x == x && __tg_fabs(x) != (simd_double8)INFINITY; }
+
+#pragma mark - isinf implementation
+static inline SIMD_CFUNC simd_int2 __tg_isinf(simd_float2 x) { return __tg_fabs(x) == (simd_float2)INFINITY; }
+static inline SIMD_CFUNC simd_int3 __tg_isinf(simd_float3 x) { return __tg_fabs(x) == (simd_float3)INFINITY; }
+static inline SIMD_CFUNC simd_int4 __tg_isinf(simd_float4 x) { return __tg_fabs(x) == (simd_float4)INFINITY; }
+static inline SIMD_CFUNC simd_int8 __tg_isinf(simd_float8 x) { return __tg_fabs(x) == (simd_float8)INFINITY; }
+static inline SIMD_CFUNC simd_int16 __tg_isinf(simd_float16 x) { return __tg_fabs(x) == (simd_float16)INFINITY; }
+static inline SIMD_CFUNC simd_long2 __tg_isinf(simd_double2 x) { return __tg_fabs(x) == (simd_double2)INFINITY; }
+static inline SIMD_CFUNC simd_long3 __tg_isinf(simd_double3 x) { return __tg_fabs(x) == (simd_double3)INFINITY; }
+static inline SIMD_CFUNC simd_long4 __tg_isinf(simd_double4 x) { return __tg_fabs(x) == (simd_double4)INFINITY; }
+static inline SIMD_CFUNC simd_long8 __tg_isinf(simd_double8 x) { return __tg_fabs(x) == (simd_double8)INFINITY; }
+
+#pragma mark - isnan implementation
+static inline SIMD_CFUNC simd_int2 __tg_isnan(simd_float2 x) { return x != x; }
+static inline SIMD_CFUNC simd_int3 __tg_isnan(simd_float3 x) { return x != x; }
+static inline SIMD_CFUNC simd_int4 __tg_isnan(simd_float4 x) { return x != x; }
+static inline SIMD_CFUNC simd_int8 __tg_isnan(simd_float8 x) { return x != x; }
+static inline SIMD_CFUNC simd_int16 __tg_isnan(simd_float16 x) { return x != x; }
+static inline SIMD_CFUNC simd_long2 __tg_isnan(simd_double2 x) { return x != x; }
+static inline SIMD_CFUNC simd_long3 __tg_isnan(simd_double3 x) { return x != x; }
+static inline SIMD_CFUNC simd_long4 __tg_isnan(simd_double4 x) { return x != x; }
+static inline SIMD_CFUNC simd_long8 __tg_isnan(simd_double8 x) { return x != x; }
+
+#pragma mark - isnormal implementation
+static inline SIMD_CFUNC simd_int2 __tg_isnormal(simd_float2 x) { return __tg_isfinite(x) && __tg_fabs(x) >= (simd_float2)__FLT_MIN__; }
+static inline SIMD_CFUNC simd_int3 __tg_isnormal(simd_float3 x) { return __tg_isfinite(x) && __tg_fabs(x) >= (simd_float3)__FLT_MIN__; }
+static inline SIMD_CFUNC simd_int4 __tg_isnormal(simd_float4 x) { return __tg_isfinite(x) && __tg_fabs(x) >= (simd_float4)__FLT_MIN__; }
+static inline SIMD_CFUNC simd_int8 __tg_isnormal(simd_float8 x) { return __tg_isfinite(x) && __tg_fabs(x) >= (simd_float8)__FLT_MIN__; }
+static inline SIMD_CFUNC simd_int16 __tg_isnormal(simd_float16 x) { return __tg_isfinite(x) && __tg_fabs(x) >= (simd_float16)__FLT_MIN__; }
+static inline SIMD_CFUNC simd_long2 __tg_isnormal(simd_double2 x) { return __tg_isfinite(x) && __tg_fabs(x) >= (simd_double2)__DBL_MIN__; }
+static inline SIMD_CFUNC simd_long3 __tg_isnormal(simd_double3 x) { return __tg_isfinite(x) && __tg_fabs(x) >= (simd_double3)__DBL_MIN__; }
+static inline SIMD_CFUNC simd_long4 __tg_isnormal(simd_double4 x) { return __tg_isfinite(x) && __tg_fabs(x) >= (simd_double4)__DBL_MIN__; }
+static inline SIMD_CFUNC simd_long8 __tg_isnormal(simd_double8 x) { return __tg_isfinite(x) && __tg_fabs(x) >= (simd_double8)__DBL_MIN__; }
+
 #pragma mark - fmin, fmax implementation
 static SIMD_CFUNC simd_float2 __tg_fmin(simd_float2 x, simd_float2 y) {
 #if defined __SSE2__
@@ -2104,10 +2529,10 @@ static inline SIMD_CFUNC simd_float3 __tg_copysign(simd_float3 x, simd_float3 y)
 static inline SIMD_CFUNC simd_float4 __tg_copysign(simd_float4 x, simd_float4 y) { return simd_bitselect(y, x, 0x7fffffff); }
 static inline SIMD_CFUNC simd_float8 __tg_copysign(simd_float8 x, simd_float8 y) { return simd_bitselect(y, x, 0x7fffffff); }
 static inline SIMD_CFUNC simd_float16 __tg_copysign(simd_float16 x, simd_float16 y) { return simd_bitselect(y, x, 0x7fffffff); }
-static inline SIMD_CFUNC simd_double2 __tg_copysign(simd_double2 x, simd_double2 y) { return simd_bitselect(y, x, 0x7fffffffffffffffL); }
-static inline SIMD_CFUNC simd_double3 __tg_copysign(simd_double3 x, simd_double3 y) { return simd_bitselect(y, x, 0x7fffffffffffffffL); }
-static inline SIMD_CFUNC simd_double4 __tg_copysign(simd_double4 x, simd_double4 y) { return simd_bitselect(y, x, 0x7fffffffffffffffL); }
-static inline SIMD_CFUNC simd_double8 __tg_copysign(simd_double8 x, simd_double8 y) { return simd_bitselect(y, x, 0x7fffffffffffffffL); }
+static inline SIMD_CFUNC simd_double2 __tg_copysign(simd_double2 x, simd_double2 y) { return simd_bitselect(y, x, 0x7fffffffffffffff); }
+static inline SIMD_CFUNC simd_double3 __tg_copysign(simd_double3 x, simd_double3 y) { return simd_bitselect(y, x, 0x7fffffffffffffff); }
+static inline SIMD_CFUNC simd_double4 __tg_copysign(simd_double4 x, simd_double4 y) { return simd_bitselect(y, x, 0x7fffffffffffffff); }
+static inline SIMD_CFUNC simd_double8 __tg_copysign(simd_double8 x, simd_double8 y) { return simd_bitselect(y, x, 0x7fffffffffffffff); }
   
 #pragma mark - sqrt implementation
 static SIMD_CFUNC simd_float2 __tg_sqrt(simd_float2 x) {
@@ -5238,6 +5663,197 @@ static inline SIMD_CFUNC simd_double8 __tg_nextafter(simd_double8 x, simd_double
 #else
 static inline SIMD_CFUNC simd_double8 __tg_nextafter(simd_double8 x, simd_double8 y) {
   return simd_make_double8(__tg_nextafter(x.lo, y.lo), __tg_nextafter(x.hi, y.hi));
+}
+#endif
+
+#if SIMD_LIBRARY_VERSION >= 5
+#pragma mark - sincos implementation
+static inline SIMD_NONCONST void __tg_sincos(simd_float2 x, simd_float2 *sinp, simd_float2 *cosp) {
+    simd_float4 sin_val;
+    simd_float4 cos_val;
+    __tg_sincos(simd_make_float4(x), &sin_val, &cos_val);
+    *sinp = simd_make_float2(sin_val);
+    *cosp = simd_make_float2(cos_val);
+}
+
+static inline SIMD_NONCONST void __tg_sincos(simd_float3 x, simd_float3 *sinp, simd_float3 *cosp) {
+    simd_float4 sin_val;
+    simd_float4 cos_val;
+    __tg_sincos(simd_make_float4(x), &sin_val, &cos_val);
+    *sinp = simd_make_float3(sin_val);
+    *cosp = simd_make_float3(cos_val);
+}
+
+extern void _simd_sincos_f4(simd_float4 x, simd_float4 *sinp, simd_float4 *cosp);
+static inline SIMD_NONCONST void __tg_sincos(simd_float4 x, simd_float4 *sinp, simd_float4 *cosp) {
+  return _simd_sincos_f4(x, sinp, cosp);
+}
+
+static inline SIMD_NONCONST void __tg_sincos(simd_float8 x, simd_float8 *sinp, simd_float8 *cosp) {
+  __tg_sincos(x.lo, (simd_float4 *)sinp+0, (simd_float4 *)cosp+0);
+  __tg_sincos(x.hi, (simd_float4 *)sinp+1, (simd_float4 *)cosp+1);
+}
+
+static inline SIMD_NONCONST void __tg_sincos(simd_float16 x, simd_float16 *sinp, simd_float16 *cosp) {
+  __tg_sincos(x.lo, (simd_float8 *)sinp+0, (simd_float8 *)cosp+0);
+  __tg_sincos(x.hi, (simd_float8 *)sinp+1, (simd_float8 *)cosp+1);
+}
+
+extern void _simd_sincos_d2(simd_double2 x, simd_double2 *sinp, simd_double2 *cosp);
+static inline SIMD_NONCONST void __tg_sincos(simd_double2 x, simd_double2 *sinp, simd_double2 *cosp) {
+  return _simd_sincos_d2(x, sinp, cosp);
+}
+
+static inline SIMD_NONCONST void __tg_sincos(simd_double3 x, simd_double3 *sinp, simd_double3 *cosp) {
+    simd_double4 sin_val;
+    simd_double4 cos_val;
+    __tg_sincos(simd_make_double4(x), &sin_val, &cos_val);
+    *sinp = simd_make_double3(sin_val);
+    *cosp = simd_make_double3(cos_val);
+}
+
+static inline SIMD_NONCONST void __tg_sincos(simd_double4 x, simd_double4 *sinp, simd_double4 *cosp) {
+  __tg_sincos(x.lo, (simd_double2 *)sinp+0, (simd_double2 *)cosp+0);
+  __tg_sincos(x.hi, (simd_double2 *)sinp+1, (simd_double2 *)cosp+1);
+}
+
+static inline SIMD_NONCONST void __tg_sincos(simd_double8 x, simd_double8 *sinp, simd_double8 *cosp) {
+  __tg_sincos(x.lo, (simd_double4 *)sinp+0, (simd_double4 *)cosp+0);
+  __tg_sincos(x.hi, (simd_double4 *)sinp+1, (simd_double4 *)cosp+1);
+}
+
+#pragma mark - sincospi implementation
+static inline SIMD_NONCONST void __tg_sincospi(simd_float2 x, simd_float2 *sinp, simd_float2 *cosp) {
+    simd_float4 sin_val;
+    simd_float4 cos_val;
+    __tg_sincospi(simd_make_float4(x), &sin_val, &cos_val);
+    *sinp = simd_make_float2(sin_val);
+    *cosp = simd_make_float2(cos_val);
+}
+
+static inline SIMD_NONCONST void __tg_sincospi(simd_float3 x, simd_float3 *sinp, simd_float3 *cosp) {
+    simd_float4 sin_val;
+    simd_float4 cos_val;
+    __tg_sincospi(simd_make_float4(x), &sin_val, &cos_val);
+    *sinp = simd_make_float3(sin_val);
+    *cosp = simd_make_float3(cos_val);
+}
+
+extern void _simd_sincospi_f4(simd_float4 x, simd_float4 *sinp, simd_float4 *cosp);
+static inline SIMD_NONCONST void __tg_sincospi(simd_float4 x, simd_float4 *sinp, simd_float4 *cosp) {
+  return _simd_sincospi_f4(x, sinp, cosp);
+}
+
+static inline SIMD_NONCONST void __tg_sincospi(simd_float8 x, simd_float8 *sinp, simd_float8 *cosp) {
+  __tg_sincospi(x.lo, (simd_float4 *)sinp+0, (simd_float4 *)cosp+0);
+  __tg_sincospi(x.hi, (simd_float4 *)sinp+1, (simd_float4 *)cosp+1);
+}
+
+static inline SIMD_NONCONST void __tg_sincospi(simd_float16 x, simd_float16 *sinp, simd_float16 *cosp) {
+  __tg_sincospi(x.lo, (simd_float8 *)sinp+0, (simd_float8 *)cosp+0);
+  __tg_sincospi(x.hi, (simd_float8 *)sinp+1, (simd_float8 *)cosp+1);
+}
+
+extern void _simd_sincospi_d2(simd_double2 x, simd_double2 *sinp, simd_double2 *cosp);
+static inline SIMD_NONCONST void __tg_sincospi(simd_double2 x, simd_double2 *sinp, simd_double2 *cosp) {
+  return _simd_sincospi_d2(x, sinp, cosp);
+}
+
+static inline SIMD_NONCONST void __tg_sincospi(simd_double3 x, simd_double3 *sinp, simd_double3 *cosp) {
+    simd_double4 sin_val;
+    simd_double4 cos_val;
+    __tg_sincospi(simd_make_double4(x), &sin_val, &cos_val);
+    *sinp = simd_make_double3(sin_val);
+    *cosp = simd_make_double3(cos_val);
+}
+
+static inline SIMD_NONCONST void __tg_sincospi(simd_double4 x, simd_double4 *sinp, simd_double4 *cosp) {
+  __tg_sincospi(x.lo, (simd_double2 *)sinp+0, (simd_double2 *)cosp+0);
+  __tg_sincospi(x.hi, (simd_double2 *)sinp+1, (simd_double2 *)cosp+1);
+}
+
+static inline SIMD_NONCONST void __tg_sincospi(simd_double8 x, simd_double8 *sinp, simd_double8 *cosp) {
+  __tg_sincospi(x.lo, (simd_double4 *)sinp+0, (simd_double4 *)cosp+0);
+  __tg_sincospi(x.hi, (simd_double4 *)sinp+1, (simd_double4 *)cosp+1);
+}
+
+#endif // SIMD_LIBRARY_VERSION >= 5
+#pragma mark - lgamma implementation
+static inline SIMD_CFUNC simd_float2 __tg_lgamma(simd_float2 x) {
+  return simd_make_float2(__tg_lgamma(simd_make_float4(x)));
+}
+
+static inline SIMD_CFUNC simd_float3 __tg_lgamma(simd_float3 x) {
+  return simd_make_float3(__tg_lgamma(simd_make_float4(x)));
+}
+
+#if SIMD_LIBRARY_VERSION >= 4
+extern simd_float4 _simd_lgamma_f4(simd_float4 x);
+static inline SIMD_CFUNC simd_float4 __tg_lgamma(simd_float4 x) {
+  return _simd_lgamma_f4(x);
+}
+#else
+static inline SIMD_CFUNC simd_float4 __tg_lgamma(simd_float4 x) {
+  return simd_make_float4(lgamma(x.x), lgamma(x.y), lgamma(x.z), lgamma(x.w));
+}
+#endif
+
+#if SIMD_LIBRARY_VERSION >= 4 && defined __x86_64__ && defined __AVX2__
+extern simd_float8 _simd_lgamma_f8(simd_float8 x);
+static inline SIMD_CFUNC simd_float8 __tg_lgamma(simd_float8 x) {
+  return _simd_lgamma_f8(x);
+}
+#else
+static inline SIMD_CFUNC simd_float8 __tg_lgamma(simd_float8 x) {
+  return simd_make_float8(__tg_lgamma(x.lo), __tg_lgamma(x.hi));
+}
+#endif
+
+#if SIMD_LIBRARY_VERSION >= 4 && defined __x86_64__ && defined __AVX512F__
+extern simd_float16 _simd_lgamma_f16(simd_float16 x);
+static inline SIMD_CFUNC simd_float16 __tg_lgamma(simd_float16 x) {
+  return _simd_lgamma_f16(x);
+}
+#else
+static inline SIMD_CFUNC simd_float16 __tg_lgamma(simd_float16 x) {
+  return simd_make_float16(__tg_lgamma(x.lo), __tg_lgamma(x.hi));
+}
+#endif
+
+#if SIMD_LIBRARY_VERSION >= 4
+extern simd_double2 _simd_lgamma_d2(simd_double2 x);
+static inline SIMD_CFUNC simd_double2 __tg_lgamma(simd_double2 x) {
+  return _simd_lgamma_d2(x);
+}
+#else
+static inline SIMD_CFUNC simd_double2 __tg_lgamma(simd_double2 x) {
+  return simd_make_double2(lgamma(x.x), lgamma(x.y));
+}
+#endif
+
+static inline SIMD_CFUNC simd_double3 __tg_lgamma(simd_double3 x) {
+  return simd_make_double3(__tg_lgamma(simd_make_double4(x)));
+}
+
+#if SIMD_LIBRARY_VERSION >= 4 && defined __x86_64__ && defined __AVX2__
+extern simd_double4 _simd_lgamma_d4(simd_double4 x);
+static inline SIMD_CFUNC simd_double4 __tg_lgamma(simd_double4 x) {
+  return _simd_lgamma_d4(x);
+}
+#else
+static inline SIMD_CFUNC simd_double4 __tg_lgamma(simd_double4 x) {
+  return simd_make_double4(__tg_lgamma(x.lo), __tg_lgamma(x.hi));
+}
+#endif
+
+#if SIMD_LIBRARY_VERSION >= 4 && defined __x86_64__ && defined __AVX512F__
+extern simd_double8 _simd_lgamma_d8(simd_double8 x);
+static inline SIMD_CFUNC simd_double8 __tg_lgamma(simd_double8 x) {
+  return _simd_lgamma_d8(x);
+}
+#else
+static inline SIMD_CFUNC simd_double8 __tg_lgamma(simd_double8 x) {
+  return simd_make_double8(__tg_lgamma(x.lo), __tg_lgamma(x.hi));
 }
 #endif
 

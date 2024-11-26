@@ -44,6 +44,7 @@ _CRTALLOC(".tls$ZZZ") char *_tls_end = NULL;
 _CRTALLOC(".CRT$XLA") PIMAGE_TLS_CALLBACK __xl_a = 0;
 _CRTALLOC(".CRT$XLZ") PIMAGE_TLS_CALLBACK __xl_z = 0;
 
+__attribute__((used))
 const IMAGE_TLS_DIRECTORY _tls_used = {
   (ULONG_PTR) &_tls_start, (ULONG_PTR) &_tls_end,
   (ULONG_PTR) &_tls_index, (ULONG_PTR) (&__xl_a+1),
@@ -170,6 +171,6 @@ __dyn_tls_dtor (HANDLE hDllHandle, DWORD dwReason, LPVOID lpreserved)
 _CRTALLOC(".CRT$XLD") PIMAGE_TLS_CALLBACK __xl_d = (PIMAGE_TLS_CALLBACK) __dyn_tls_dtor;
 
 
-int mingw_initltsdrot_force = 0;
-int mingw_initltsdyn_force = 0;
-int mingw_initltssuo_force = 0;
+int __mingw_initltsdrot_force = 0;
+int __mingw_initltsdyn_force = 0;
+int __mingw_initltssuo_force = 0;

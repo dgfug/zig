@@ -3,6 +3,7 @@ const assert = std.debug.assert;
 const crypto = std.crypto;
 const debug = std.debug;
 const Ghash = std.crypto.onetimeauth.Ghash;
+const math = std.math;
 const mem = std.mem;
 const modes = crypto.core.modes;
 const AuthenticationError = crypto.errors.AuthenticationError;
@@ -30,29 +31,39 @@ fn AesGcm(comptime Aes: anytype) type {
 
             var t: [16]u8 = undefined;
             var j: [16]u8 = undefined;
-            mem.copy(u8, j[0..nonce_length], npub[0..]);
-            mem.writeIntBig(u32, j[nonce_length..][0..4], 1);
+            j[0..nonce_length].* = npub;
+            mem.writeInt(u32, j[nonce_length..][0..4], 1, .big);
             aes.encrypt(&t, &j);
 
-            var mac = Ghash.init(&h);
+            const block_count = (math.divCeil(usize, ad.len, Ghash.block_length) catch unreachable) + (math.divCeil(usize, c.len, Ghash.block_length) catch unreachable) + 1;
+            var mac = Ghash.initForBlockCount(&h, block_count);
             mac.update(ad);
             mac.pad();
 
-            mem.writeIntBig(u32, j[nonce_length..][0..4], 2);
-            modes.ctr(@TypeOf(aes), aes, c, m, j, std.builtin.Endian.Big);
+            mem.writeInt(u32, j[nonce_length..][0..4], 2, .big);
+            modes.ctr(@TypeOf(aes), aes, c, m, j, .big);
             mac.update(c[0..m.len][0..]);
             mac.pad();
 
             var final_block = h;
-            mem.writeIntBig(u64, final_block[0..8], ad.len * 8);
-            mem.writeIntBig(u64, final_block[8..16], m.len * 8);
+            mem.writeInt(u64, final_block[0..8], @as(u64, ad.len) * 8, .big);
+            mem.writeInt(u64, final_block[8..16], @as(u64, m.len) * 8, .big);
             mac.update(&final_block);
             mac.final(tag);
-            for (t) |x, i| {
+            for (t, 0..) |x, i| {
                 tag[i] ^= x;
             }
         }
 
+        /// `m`: Message
+        /// `c`: Ciphertext
+        /// `tag`: Authentication tag
+        /// `ad`: Associated data
+        /// `npub`: Public nonce
+        /// `k`: Private key
+        /// Asserts `c.len == m.len`.
+        ///
+        /// Contents of `m` are undefined if an error is returned.
         pub fn decrypt(m: []u8, c: []const u8, tag: [tag_length]u8, ad: []const u8, npub: [nonce_length]u8, key: [key_length]u8) AuthenticationError!void {
             assert(c.len == m.len);
 
@@ -62,11 +73,12 @@ fn AesGcm(comptime Aes: anytype) type {
 
             var t: [16]u8 = undefined;
             var j: [16]u8 = undefined;
-            mem.copy(u8, j[0..nonce_length], npub[0..]);
-            mem.writeIntBig(u32, j[nonce_length..][0..4], 1);
+            j[0..nonce_length].* = npub;
+            mem.writeInt(u32, j[nonce_length..][0..4], 1, .big);
             aes.encrypt(&t, &j);
 
-            var mac = Ghash.init(&h);
+            const block_count = (math.divCeil(usize, ad.len, Ghash.block_length) catch unreachable) + (math.divCeil(usize, c.len, Ghash.block_length) catch unreachable) + 1;
+            var mac = Ghash.initForBlockCount(&h, block_count);
             mac.update(ad);
             mac.pad();
 
@@ -74,26 +86,24 @@ fn AesGcm(comptime Aes: anytype) type {
             mac.pad();
 
             var final_block = h;
-            mem.writeIntBig(u64, final_block[0..8], ad.len * 8);
-            mem.writeIntBig(u64, final_block[8..16], m.len * 8);
+            mem.writeInt(u64, final_block[0..8], @as(u64, ad.len) * 8, .big);
+            mem.writeInt(u64, final_block[8..16], @as(u64, m.len) * 8, .big);
             mac.update(&final_block);
             var computed_tag: [Ghash.mac_length]u8 = undefined;
             mac.final(&computed_tag);
-            for (t) |x, i| {
+            for (t, 0..) |x, i| {
                 computed_tag[i] ^= x;
             }
 
-            var acc: u8 = 0;
-            for (computed_tag) |_, p| {
-                acc |= (computed_tag[p] ^ tag[p]);
-            }
-            if (acc != 0) {
-                mem.set(u8, m, 0xaa);
+            const verify = crypto.timing_safe.eql([tag_length]u8, computed_tag, tag);
+            if (!verify) {
+                crypto.secureZero(u8, &computed_tag);
+                @memset(m, undefined);
                 return error.AuthenticationFailed;
             }
 
-            mem.writeIntBig(u32, j[nonce_length..][0..4], 2);
-            modes.ctr(@TypeOf(aes), aes, m, c, j, std.builtin.Endian.Big);
+            mem.writeInt(u32, j[nonce_length..][0..4], 2, .big);
+            modes.ctr(@TypeOf(aes), aes, m, c, j, .big);
         }
     };
 }

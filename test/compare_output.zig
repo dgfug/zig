@@ -15,7 +15,7 @@ pub fn addCases(cases: *tests.CompareOutputContext) void {
         \\    _ = c.puts("Hello, world!");
         \\    return 0;
         \\}
-    , "Hello, world!" ++ std.cstr.line_sep);
+    , "Hello, world!" ++ if (@import("builtin").os.tag == .windows) "\r\n" else "\n");
 
     cases.add("hello world without libc",
         \\const io = @import("std").io;
@@ -75,7 +75,7 @@ pub fn addCases(cases: *tests.CompareOutputContext) void {
         \\    _ = c.printf("0.0e0: %.013a\n",
         \\         @as(f64, 0.0e0));
         \\    _ = c.printf("000000000000000000000000000000000000000000000000000000000.0e0: %.013a\n",
-        \\         @as(f64, 000000000000000000000000000000000000000000000000000000000.0e0));
+        \\         @as(f64, 0.0e0));
         \\    _ = c.printf("0.000000000000000000000000000000000000000000000000000000000e0: %.013a\n",
         \\         @as(f64, 0.000000000000000000000000000000000000000000000000000000000e0));
         \\    _ = c.printf("0.0e000000000000000000000000000000000000000000000000000000000: %.013a\n",
@@ -165,7 +165,7 @@ pub fn addCases(cases: *tests.CompareOutputContext) void {
         \\const y : u16 = 5678;
         \\pub fn main() void {
         \\    var x_local : i32 = print_ok(x);
-        \\    _ = x_local;
+        \\    _ = &x_local;
         \\}
         \\fn print_ok(val: @TypeOf(x)) @TypeOf(foo) {
         \\    _ = val;
@@ -179,9 +179,9 @@ pub fn addCases(cases: *tests.CompareOutputContext) void {
     cases.addC("expose function pointer to C land",
         \\const c = @cImport(@cInclude("stdlib.h"));
         \\
-        \\export fn compare_fn(a: ?*const c_void, b: ?*const c_void) c_int {
-        \\    const a_int = @ptrCast(*const i32, @alignCast(@alignOf(i32), a));
-        \\    const b_int = @ptrCast(*const i32, @alignCast(@alignOf(i32), b));
+        \\export fn compare_fn(a: ?*const anyopaque, b: ?*const anyopaque) c_int {
+        \\    const a_int: *const i32 = @ptrCast(@alignCast(a));
+        \\    const b_int: *const i32 = @ptrCast(@alignCast(b));
         \\    if (a_int.* < b_int.*) {
         \\        return -1;
         \\    } else if (a_int.* > b_int.*) {
@@ -194,9 +194,9 @@ pub fn addCases(cases: *tests.CompareOutputContext) void {
         \\pub export fn main() c_int {
         \\    var array = [_]u32{ 1, 7, 3, 2, 0, 9, 4, 8, 6, 5 };
         \\
-        \\    c.qsort(@ptrCast(?*c_void, &array), @intCast(c_ulong, array.len), @sizeOf(i32), compare_fn);
+        \\    c.qsort(@ptrCast(&array), @intCast(array.len), @sizeOf(i32), compare_fn);
         \\
-        \\    for (array) |item, i| {
+        \\    for (array, 0..) |item, i| {
         \\        if (item != i) {
         \\            c.abort();
         \\        }
@@ -229,8 +229,8 @@ pub fn addCases(cases: *tests.CompareOutputContext) void {
         \\    }
         \\    const small: f32 = 3.25;
         \\    const x: f64 = small;
-        \\    const y = @floatToInt(i32, x);
-        \\    const z = @intToFloat(f64, y);
+        \\    const y: i32 = @intFromFloat(x);
+        \\    const z: f64 = @floatFromInt(y);
         \\    _ = c.printf("%.2f\n%d\n%.2f\n%.2f\n", x, y, z, @as(f64, -0.4));
         \\    return 0;
         \\}
@@ -291,7 +291,11 @@ pub fn addCases(cases: *tests.CompareOutputContext) void {
         \\    stdout.print("before\n", .{}) catch unreachable;
         \\    defer stdout.print("defer1\n", .{}) catch unreachable;
         \\    defer stdout.print("defer2\n", .{}) catch unreachable;
-        \\    var args_it = @import("std").process.args();
+        \\    var gpa: @import("std").heap.GeneralPurposeAllocator(.{}) = .init;
+        \\    defer _ = gpa.deinit();
+        \\    var arena = @import("std").heap.ArenaAllocator.init(gpa.allocator());
+        \\    defer arena.deinit();
+        \\    var args_it = @import("std").process.argsWithAllocator(arena.allocator()) catch unreachable;
         \\    if (args_it.skip() and !args_it.skip()) return;
         \\    defer stdout.print("defer3\n", .{}) catch unreachable;
         \\    stdout.print("after\n", .{}) catch unreachable;
@@ -355,15 +359,17 @@ pub fn addCases(cases: *tests.CompareOutputContext) void {
             \\const std = @import("std");
             \\const io = std.io;
             \\const os = std.os;
-            \\const allocator = std.testing.allocator;
             \\
             \\pub fn main() !void {
-            \\    var args_it = std.process.args();
+            \\    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+            \\    defer _ = gpa.deinit();
+            \\    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+            \\    defer arena.deinit();
+            \\    var args_it = try std.process.argsWithAllocator(arena.allocator());
             \\    const stdout = io.getStdOut().writer();
             \\    var index: usize = 0;
             \\    _ = args_it.skip();
-            \\    while (args_it.next(allocator)) |arg_or_err| : (index += 1) {
-            \\        const arg = try arg_or_err;
+            \\    while (args_it.next()) |arg| : (index += 1) {
             \\        try stdout.print("{}: {s}\n", .{index, arg});
             \\    }
             \\}
@@ -394,15 +400,17 @@ pub fn addCases(cases: *tests.CompareOutputContext) void {
             \\const std = @import("std");
             \\const io = std.io;
             \\const os = std.os;
-            \\const allocator = std.testing.allocator;
             \\
             \\pub fn main() !void {
-            \\    var args_it = std.process.args();
+            \\    var gpa: std.heap.GeneralPurposeAllocator(.{}) = .init;
+            \\    defer _ = gpa.deinit();
+            \\    var arena = std.heap.ArenaAllocator.init(gpa.allocator());
+            \\    defer arena.deinit();
+            \\    var args_it = try std.process.argsWithAllocator(arena.allocator());
             \\    const stdout = io.getStdOut().writer();
             \\    var index: usize = 0;
             \\    _ = args_it.skip();
-            \\    while (args_it.next(allocator)) |arg_or_err| : (index += 1) {
-            \\        const arg = try arg_or_err;
+            \\    while (args_it.next()) |arg| : (index += 1) {
             \\        try stdout.print("{}: {s}\n", .{index, arg});
             \\    }
             \\}
@@ -432,11 +440,14 @@ pub fn addCases(cases: *tests.CompareOutputContext) void {
     cases.add("std.log per scope log level override",
         \\const std = @import("std");
         \\
-        \\pub const log_level: std.log.Level = .debug;
-        \\
-        \\pub const scope_levels = [_]std.log.ScopeLevel{
-        \\    .{ .scope = .a, .level = .warn },
-        \\    .{ .scope = .c, .level = .err },
+        \\pub const std_options: std.Options = .{
+        \\    .log_level = .debug,
+        \\    
+        \\    .log_scope_levels = &.{
+        \\        .{ .scope = .a, .level = .warn },
+        \\        .{ .scope = .c, .level = .err },
+        \\    },
+        \\    .logFn = log,
         \\};
         \\
         \\const loga = std.log.scoped(.a);
@@ -486,17 +497,23 @@ pub fn addCases(cases: *tests.CompareOutputContext) void {
     cases.add("std.heap.LoggingAllocator logs to std.log",
         \\const std = @import("std");
         \\
-        \\pub const log_level: std.log.Level = .debug;
+        \\pub const std_options: std.Options = .{
+        \\    .log_level = .debug,
+        \\    .logFn = log,
+        \\};
         \\
         \\pub fn main() !void {
         \\    var allocator_buf: [10]u8 = undefined;
-        \\    var fixedBufferAllocator = std.mem.validationWrap(std.heap.FixedBufferAllocator.init(&allocator_buf));
-        \\    const allocator = &std.heap.loggingAllocator(&fixedBufferAllocator.allocator).allocator;
+        \\    const fba = std.heap.FixedBufferAllocator.init(&allocator_buf);
+        \\    var fba_wrapped = std.mem.validationWrap(fba);
+        \\    var logging_allocator = std.heap.loggingAllocator(fba_wrapped.allocator());
+        \\    const allocator = logging_allocator.allocator();
         \\
         \\    var a = try allocator.alloc(u8, 10);
-        \\    a = allocator.shrink(a, 5);
+        \\    try std.testing.expect(allocator.resize(a, 5));
+        \\    a = a[0..5];
         \\    try std.testing.expect(a.len == 5);
-        \\    try std.testing.expectError(error.OutOfMemory, allocator.resize(a, 20));
+        \\    try std.testing.expect(!allocator.resize(a, 20));
         \\    allocator.free(a);
         \\}
         \\
@@ -512,10 +529,19 @@ pub fn addCases(cases: *tests.CompareOutputContext) void {
         \\    nosuspend stdout.print(level_txt ++ prefix2 ++ format ++ "\n", args) catch return;
         \\}
     ,
-        \\debug: alloc - success - len: 10, ptr_align: 1, len_align: 0
-        \\debug: shrink - success - 10 to 5, len_align: 0, buf_align: 1
-        \\error: expand - failure: OutOfMemory - 5 to 20, len_align: 0, buf_align: 1
-        \\debug: free - success - len: 5
+        \\debug: alloc - success - len: 10, ptr_align: 0
+        \\debug: shrink - success - 10 to 5, buf_align: 0
+        \\error: expand - failure - 5 to 20, buf_align: 0
+        \\debug: free - len: 5
         \\
     );
+
+    cases.add("valid carriage return example", "const io = @import(\"std\").io;\r\n" ++ // Testing CRLF line endings are valid
+        "\r\n" ++
+        "pub \r fn main() void {\r\n" ++ // Testing isolated carriage return as whitespace is valid
+        "    const stdout = io.getStdOut().writer();\r\n" ++
+        "    stdout.print(\\\\A Multiline\r\n" ++ // testing CRLF at end of multiline string line is valid and normalises to \n in the output
+        "                 \\\\String\r\n" ++
+        "                 , .{}) catch unreachable;\r\n" ++
+        "}\r\n", "A Multiline\nString");
 }

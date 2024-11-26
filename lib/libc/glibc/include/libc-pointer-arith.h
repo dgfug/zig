@@ -1,5 +1,5 @@
 /* Helper macros for pointer arithmetic.
-   Copyright (C) 2012-2020 Free Software Foundation, Inc.
+   Copyright (C) 2012-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -37,6 +37,9 @@
 /* Cast an integer or a pointer VAL to integer with proper type.  */
 # define cast_to_integer(val) ((__integer_if_pointer_type (val)) (val))
 
+/* Cast an integer VAL to void * pointer.  */
+# define cast_to_pointer(val) ((void *) (uintptr_t) (val))
+
 /* Align a value by rounding down to closest size.
    e.g. Using size of 4096, we get this behavior:
 	{4095, 4096, 4097} = {0, 4096, 4096}.  */
@@ -56,5 +59,13 @@
 /* Same as ALIGN_UP(), but automatically casts when base is a pointer.  */
 #define PTR_ALIGN_UP(base, size) \
   ((__typeof__ (base)) ALIGN_UP ((uintptr_t) (base), (size)))
+
+/* Check if BASE is aligned on SIZE  */
+#define PTR_IS_ALIGNED(base, size) \
+  ((((uintptr_t) (base)) & (size - 1)) == 0)
+
+/* Returns the ptrdiff_t difference between P1 and P2.  */
+#define PTR_DIFF(p1, p2) \
+  ((ptrdiff_t)((uintptr_t)(p1) - (uintptr_t)(p2)))
 
 #endif

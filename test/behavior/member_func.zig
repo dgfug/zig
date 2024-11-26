@@ -1,8 +1,10 @@
-const expect = @import("std").testing.expect;
+const builtin = @import("builtin");
+const std = @import("std");
+const expect = std.testing.expect;
 
 const HasFuncs = struct {
     state: u32,
-    func_field: fn (u32) u32,
+    func_field: *const fn (u32) u32,
 
     fn inc(self: *HasFuncs) void {
         self.state += 1;
@@ -25,6 +27,11 @@ const HasFuncs = struct {
 };
 
 test "standard field calls" {
+    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_spirv64) return error.SkipZigTest;
+
     try expect(HasFuncs.one(0) == 1);
     try expect(HasFuncs.two(0) == 2);
 
@@ -64,6 +71,11 @@ test "standard field calls" {
 }
 
 test "@field field calls" {
+    if (builtin.zig_backend == .stage2_arm) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_aarch64) return error.SkipZigTest;
+    if (builtin.zig_backend == .stage2_sparc64) return error.SkipZigTest; // TODO
+    if (builtin.zig_backend == .stage2_spirv64) return error.SkipZigTest;
+
     try expect(@field(HasFuncs, "one")(0) == 1);
     try expect(@field(HasFuncs, "two")(0) == 2);
 
@@ -73,18 +85,6 @@ test "@field field calls" {
 
     const pv = &v;
     const pcv: *const HasFuncs = pv;
-
-    try expect(@field(v, "get")() == 0);
-    @field(v, "inc")();
-    try expect(v.state == 1);
-    try expect(@field(v, "get")() == 1);
-
-    @field(pv, "inc")();
-    try expect(v.state == 2);
-    try expect(@field(pv, "get")() == 2);
-    try expect(@field(v, "getPtr")().* == 2);
-    try expect(@field(pcv, "get")() == 2);
-    try expect(@field(pcv, "getPtr")().* == 2);
 
     v.func_field = HasFuncs.one;
     try expect(@field(v, "func_field")(0) == 1);

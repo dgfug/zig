@@ -1,11 +1,11 @@
 /* Generated at libc build time from syscall list.  */
-/* The system call list corresponds to kernel 5.10.  */
+/* The system call list corresponds to kernel 6.9.  */
 
 #ifndef _SYSCALL_H
 # error "Never use <bits/syscall.h> directly; include <sys/syscall.h> instead."
 #endif
 
-#define __GLIBC_LINUX_VERSION_CODE 330240
+#define __GLIBC_LINUX_VERSION_CODE 395520
 
 #ifdef __NR_FAST_atomic_update
 # define SYS_FAST_atomic_update __NR_FAST_atomic_update
@@ -141,6 +141,10 @@
 
 #ifdef __NR_cacheflush
 # define SYS_cacheflush __NR_cacheflush
+#endif
+
+#ifdef __NR_cachestat
+# define SYS_cachestat __NR_cachestat
 #endif
 
 #ifdef __NR_capget
@@ -291,6 +295,10 @@
 # define SYS_epoll_pwait __NR_epoll_pwait
 #endif
 
+#ifdef __NR_epoll_pwait2
+# define SYS_epoll_pwait2 __NR_epoll_pwait2
+#endif
+
 #ifdef __NR_epoll_wait
 # define SYS_epoll_wait __NR_epoll_wait
 #endif
@@ -369,6 +377,10 @@
 
 #ifdef __NR_fchmodat
 # define SYS_fchmodat __NR_fchmodat
+#endif
+
+#ifdef __NR_fchmodat2
+# define SYS_fchmodat2 __NR_fchmodat2
 #endif
 
 #ifdef __NR_fchown
@@ -487,8 +499,24 @@
 # define SYS_futex __NR_futex
 #endif
 
+#ifdef __NR_futex_requeue
+# define SYS_futex_requeue __NR_futex_requeue
+#endif
+
 #ifdef __NR_futex_time64
 # define SYS_futex_time64 __NR_futex_time64
+#endif
+
+#ifdef __NR_futex_wait
+# define SYS_futex_wait __NR_futex_wait
+#endif
+
+#ifdef __NR_futex_waitv
+# define SYS_futex_waitv __NR_futex_waitv
+#endif
+
+#ifdef __NR_futex_wake
+# define SYS_futex_wake __NR_futex_wake
 #endif
 
 #ifdef __NR_futimesat
@@ -803,6 +831,18 @@
 # define SYS_kill __NR_kill
 #endif
 
+#ifdef __NR_landlock_add_rule
+# define SYS_landlock_add_rule __NR_landlock_add_rule
+#endif
+
+#ifdef __NR_landlock_create_ruleset
+# define SYS_landlock_create_ruleset __NR_landlock_create_ruleset
+#endif
+
+#ifdef __NR_landlock_restrict_self
+# define SYS_landlock_restrict_self __NR_landlock_restrict_self
+#endif
+
 #ifdef __NR_lchown
 # define SYS_lchown __NR_lchown
 #endif
@@ -825,6 +865,10 @@
 
 #ifdef __NR_listen
 # define SYS_listen __NR_listen
+#endif
+
+#ifdef __NR_listmount
+# define SYS_listmount __NR_listmount
 #endif
 
 #ifdef __NR_listxattr
@@ -859,6 +903,18 @@
 # define SYS_lsetxattr __NR_lsetxattr
 #endif
 
+#ifdef __NR_lsm_get_self_attr
+# define SYS_lsm_get_self_attr __NR_lsm_get_self_attr
+#endif
+
+#ifdef __NR_lsm_list_modules
+# define SYS_lsm_list_modules __NR_lsm_list_modules
+#endif
+
+#ifdef __NR_lsm_set_self_attr
+# define SYS_lsm_set_self_attr __NR_lsm_set_self_attr
+#endif
+
 #ifdef __NR_lstat
 # define SYS_lstat __NR_lstat
 #endif
@@ -871,6 +927,10 @@
 # define SYS_madvise __NR_madvise
 #endif
 
+#ifdef __NR_map_shadow_stack
+# define SYS_map_shadow_stack __NR_map_shadow_stack
+#endif
+
 #ifdef __NR_mbind
 # define SYS_mbind __NR_mbind
 #endif
@@ -881,6 +941,10 @@
 
 #ifdef __NR_memfd_create
 # define SYS_memfd_create __NR_memfd_create
+#endif
+
+#ifdef __NR_memfd_secret
+# define SYS_memfd_secret __NR_memfd_secret
 #endif
 
 #ifdef __NR_memory_ordering
@@ -937,6 +1001,10 @@
 
 #ifdef __NR_mount
 # define SYS_mount __NR_mount
+#endif
+
+#ifdef __NR_mount_setattr
+# define SYS_mount_setattr __NR_mount_setattr
 #endif
 
 #ifdef __NR_move_mount
@@ -1101,6 +1169,10 @@
 
 #ifdef __NR_openat2
 # define SYS_openat2 __NR_openat2
+#endif
+
+#ifdef __NR_or1k_atomic
+# define SYS_or1k_atomic __NR_or1k_atomic
 #endif
 
 #ifdef __NR_osf_adjtime
@@ -1647,6 +1719,10 @@
 # define SYS_process_madvise __NR_process_madvise
 #endif
 
+#ifdef __NR_process_mrelease
+# define SYS_process_mrelease __NR_process_mrelease
+#endif
+
 #ifdef __NR_process_vm_readv
 # define SYS_process_vm_readv __NR_process_vm_readv
 #endif
@@ -1697,6 +1773,10 @@
 
 #ifdef __NR_quotactl
 # define SYS_quotactl __NR_quotactl
+#endif
+
+#ifdef __NR_quotactl_fd
+# define SYS_quotactl_fd __NR_quotactl_fd
 #endif
 
 #ifdef __NR_read
@@ -1777,6 +1857,10 @@
 
 #ifdef __NR_riscv_flush_icache
 # define SYS_riscv_flush_icache __NR_riscv_flush_icache
+#endif
+
+#ifdef __NR_riscv_hwprobe
+# define SYS_riscv_hwprobe __NR_riscv_hwprobe
 #endif
 
 #ifdef __NR_rmdir
@@ -1965,6 +2049,10 @@
 
 #ifdef __NR_set_mempolicy
 # define SYS_set_mempolicy __NR_set_mempolicy
+#endif
+
+#ifdef __NR_set_mempolicy_home_node
+# define SYS_set_mempolicy_home_node __NR_set_mempolicy_home_node
 #endif
 
 #ifdef __NR_set_robust_list
@@ -2209,6 +2297,10 @@
 
 #ifdef __NR_statfs64
 # define SYS_statfs64 __NR_statfs64
+#endif
+
+#ifdef __NR_statmount
+# define SYS_statmount __NR_statmount
 #endif
 
 #ifdef __NR_statx

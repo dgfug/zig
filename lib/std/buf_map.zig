@@ -4,7 +4,7 @@ const mem = std.mem;
 const Allocator = mem.Allocator;
 const testing = std.testing;
 
-/// BufMap copies keys and values before they go into the map, and
+/// BufMap copies keys and values before they go into the map and
 /// frees them when they get removed.
 pub const BufMap = struct {
     hash_map: BufMapHashMap,
@@ -14,9 +14,8 @@ pub const BufMap = struct {
     /// Create a BufMap backed by a specific allocator.
     /// That allocator will be used for both backing allocations
     /// and string deduplication.
-    pub fn init(allocator: *Allocator) BufMap {
-        var self = BufMap{ .hash_map = BufMapHashMap.init(allocator) };
-        return self;
+    pub fn init(allocator: Allocator) BufMap {
+        return .{ .hash_map = BufMapHashMap.init(allocator) };
     }
 
     /// Free the backing storage of the map, as well as all
@@ -82,7 +81,7 @@ pub const BufMap = struct {
     }
 
     /// Returns the number of KV pairs stored in the map.
-    pub fn count(self: BufMap) usize {
+    pub fn count(self: BufMap) BufMapHashMap.Size {
         return self.hash_map.count();
     }
 

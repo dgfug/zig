@@ -342,6 +342,17 @@
 #define __NR_openat2		5437
 #define __NR_pidfd_getfd	5438
 #define __NR_faccessat2		5439
+#define __NR_process_madvise	5440
+#define __NR_epoll_pwait2	5441
+#define __NR_mount_setattr	5442
+#define __NR_landlock_create_ruleset	5444
+#define __NR_landlock_add_rule	5445
+#define __NR_landlock_restrict_self	5446
+#define __NR_process_mrelease	5448
+#define __NR_futex_waitv	5449
+#define __NR_set_mempolicy_home_node	5450
+#define __NR_cachestat		5451
+#define __NR_fchmodat2		5452
 
 #define SYS_read			5000
 #define SYS_write			5001
@@ -687,3 +698,14 @@
 #define SYS_openat2		5437
 #define SYS_pidfd_getfd	5438
 #define SYS_faccessat2		5439
+#define SYS_process_madvise	5440
+#define SYS_epoll_pwait2	5441
+#define SYS_mount_setattr	5442
+#define SYS_landlock_create_ruleset	5444
+#define SYS_landlock_add_rule	5445
+#define SYS_landlock_restrict_self	5446
+#define SYS_process_mrelease	5448
+#define SYS_futex_waitv	5449
+#define SYS_set_mempolicy_home_node	5450
+#define SYS_cachestat		5451
+#define SYS_fchmodat2		5452

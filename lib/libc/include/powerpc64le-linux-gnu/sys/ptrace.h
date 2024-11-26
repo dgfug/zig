@@ -1,5 +1,5 @@
 /* `ptrace' debugger support interface.  Linux/PowerPC version.
-   Copyright (C) 2001-2021 Free Software Foundation, Inc.
+   Copyright (C) 2001-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -36,9 +36,11 @@ __BEGIN_DECLS
 # undef PTRACE_GETREGS
 # undef PTRACE_GETREGS64
 # undef PTRACE_GETREGSET
+# undef PTRACE_GET_RSEQ_CONFIGURATION
 # undef PTRACE_GETSIGINFO
 # undef PTRACE_GETSIGMASK
 # undef PTRACE_GET_SYSCALL_INFO
+# undef PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG
 # undef PTRACE_GETVRREGS
 # undef PTRACE_GETVSRREGS
 # undef PTRACE_INTERRUPT
@@ -61,6 +63,7 @@ __BEGIN_DECLS
 # undef PTRACE_SETREGSET
 # undef PTRACE_SETSIGINFO
 # undef PTRACE_SETSIGMASK
+# undef PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG
 # undef PTRACE_SETVRREGS
 # undef PTRACE_SETVSRREGS
 # undef PTRACE_SINGLEBLOCK
@@ -70,6 +73,8 @@ __BEGIN_DECLS
 # undef PTRACE_SYSCALL_INFO_ENTRY
 # undef PTRACE_SYSCALL_INFO_EXIT
 # undef PTRACE_SYSCALL_INFO_SECCOMP
+# undef PTRACE_SYSEMU
+# undef PTRACE_SYSEMU_SINGLESTEP
 # undef PTRACE_TRACEME
 #endif
 
@@ -188,6 +193,14 @@ enum __ptrace_request
   PTRACE_SETVSRREGS = 28,
 #define PT_SETVSRREGS PTRACE_SETVSRREGS
 
+  /* Continue and stop at the next syscall, it will not be executed.  */
+  PTRACE_SYSEMU = 29,
+#define PT_SYSEMU PTRACE_SYSEMU
+
+  /* Single step the process, the next syscall will not be executed.  */
+  PTRACE_SYSEMU_SINGLESTEP = 30,
+#define PT_SYSEMU_SINGLESTEP PTRACE_SYSEMU_SINGLESTEP
+
   /* Execute process until next taken branch.  */
   PTRACE_SINGLEBLOCK = 256,
 #define PT_STEPBLOCK PTRACE_SINGLEBLOCK
@@ -250,8 +263,22 @@ enum __ptrace_request
 #define PTRACE_SECCOMP_GET_METADATA PTRACE_SECCOMP_GET_METADATA
 
   /* Get information about system call.  */
-  PTRACE_GET_SYSCALL_INFO = 0x420e
+  PTRACE_GET_SYSCALL_INFO = 0x420e,
 #define PTRACE_GET_SYSCALL_INFO PTRACE_GET_SYSCALL_INFO
+
+  /* Get rseq configuration information.  */
+  PTRACE_GET_RSEQ_CONFIGURATION = 0x420f,
+#define PTRACE_GET_RSEQ_CONFIGURATION PTRACE_GET_RSEQ_CONFIGURATION
+
+  /* Set configuration for syscall user dispatch.  */
+  PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG = 0x4210,
+#define PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG \
+  PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG
+
+  /* Get configuration for syscall user dispatch.  */
+  PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG = 0x4211
+#define PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG \
+  PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG
 };
 
 

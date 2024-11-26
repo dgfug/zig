@@ -1,4 +1,4 @@
-/* Copyright (C) 1996-2021 Free Software Foundation, Inc.
+/* Copyright (C) 1996-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -168,7 +168,7 @@ extern int aio_suspend (const struct aiocb *const __list[], int __nent,
 			const struct timespec *__restrict __timeout)
   __nonnull ((1));
 
-/* Force all operations associated with file desriptor described by
+/* Force all operations associated with file descriptor described by
    `aio_fildes' member of AIOCBP.  */
 extern int aio_fsync (int __operation, struct aiocb *__aiocbp)
   __THROW __nonnull ((2));
@@ -193,12 +193,17 @@ extern __ssize_t __REDIRECT_NTH (aio_return, (struct aiocb *__aiocbp),
 extern int __REDIRECT_NTH (aio_cancel,
 			   (int __fildes, struct aiocb *__aiocbp),
 			   aio_cancel64);
-
+#  ifdef __USE_TIME64_REDIRECTS
+extern int __REDIRECT_NTH (aio_suspend,
+			   (const struct aiocb *const __list[], int __nent,
+			    const struct timespec *__restrict __timeout),
+			   __aio_suspend_time64) __nonnull ((1));
+#  else
 extern int __REDIRECT_NTH (aio_suspend,
 			   (const struct aiocb *const __list[], int __nent,
 			    const struct timespec *__restrict __timeout),
 			   aio_suspend64) __nonnull ((1));
-
+#  endif
 extern int __REDIRECT_NTH (aio_fsync,
 			   (int __operation, struct aiocb *__aiocbp),
 			   aio_fsync64) __nonnull ((2));
@@ -210,7 +215,11 @@ extern int __REDIRECT_NTH (aio_fsync,
 #  define aio_error aio_error64
 #  define aio_return aio_return64
 #  define aio_cancel aio_cancel64
-#  define aio_suspend aio_suspend64
+#  ifdef __USE_TIME64_REDIRECTS
+#   define aio_suspend __aio_suspend_time64
+#  else
+#   define aio_suspend aio_suspend64
+#  endif
 #  define aio_fsync aio_fsync64
 # endif
 #endif

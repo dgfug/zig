@@ -18,7 +18,7 @@
 #ifndef _SECIMP
 #define _SECIMP __declspec(dllimport)
 #endif /* _SECIMP */
-#endif /* defined(_CRTBLD) || defined(__LIBMSVCRT__) */
+#endif /* defined(__LIBMSVCRT__) */
 
 #if (defined (__GNUC__) && defined (__GNUC_MINOR__)) \
     || (defined(__clang__) && defined(__clang_major__))
@@ -245,7 +245,7 @@
 #define _CW_DEFAULT (_RC_NEAR+_PC_53+_EM_INVALID+_EM_ZERODIVIDE+_EM_OVERFLOW+_EM_UNDERFLOW+_EM_INEXACT+_EM_DENORMAL)
 #elif defined(__ia64__)
 #define _CW_DEFAULT (_RC_NEAR+_PC_64+_EM_INVALID+_EM_ZERODIVIDE+_EM_OVERFLOW+_EM_UNDERFLOW+_EM_INEXACT+_EM_DENORMAL)
-#elif defined(__x86_64__)
+#elif defined(__x86_64__) || defined(__arm__) || defined(__aarch64__)
 #define _CW_DEFAULT (_RC_NEAR+_EM_INVALID+_EM_ZERODIVIDE+_EM_OVERFLOW+_EM_UNDERFLOW+_EM_INEXACT+_EM_DENORMAL)
 #endif
 

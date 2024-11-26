@@ -1,6 +1,6 @@
 // zig run -O ReleaseFast --zig-lib-dir ../.. benchmark.zig
 
-const std = @import("../std.zig");
+const std = @import("std");
 const builtin = @import("builtin");
 const mem = std.mem;
 const time = std.time;
@@ -10,7 +10,7 @@ const crypto = std.crypto;
 const KiB = 1024;
 const MiB = 1024 * KiB;
 
-var prng = std.rand.DefaultPrng.init(0);
+var prng = std.Random.DefaultPrng.init(0);
 const random = prng.random();
 
 const Crypto = struct {
@@ -25,35 +25,44 @@ const hashes = [_]Crypto{
     Crypto{ .ty = crypto.hash.sha2.Sha512, .name = "sha512" },
     Crypto{ .ty = crypto.hash.sha3.Sha3_256, .name = "sha3-256" },
     Crypto{ .ty = crypto.hash.sha3.Sha3_512, .name = "sha3-512" },
-    Crypto{ .ty = crypto.hash.Gimli, .name = "gimli-hash" },
+    Crypto{ .ty = crypto.hash.sha3.Shake128, .name = "shake-128" },
+    Crypto{ .ty = crypto.hash.sha3.Shake256, .name = "shake-256" },
+    Crypto{ .ty = crypto.hash.sha3.TurboShake128(null), .name = "turboshake-128" },
+    Crypto{ .ty = crypto.hash.sha3.TurboShake256(null), .name = "turboshake-256" },
     Crypto{ .ty = crypto.hash.blake2.Blake2s256, .name = "blake2s" },
     Crypto{ .ty = crypto.hash.blake2.Blake2b512, .name = "blake2b" },
     Crypto{ .ty = crypto.hash.Blake3, .name = "blake3" },
 };
 
+const block_size: usize = 8 * 8192;
+
 pub fn benchmarkHash(comptime Hash: anytype, comptime bytes: comptime_int) !u64 {
+    const blocks_count = bytes / block_size;
+    var block: [block_size]u8 = undefined;
+    random.bytes(&block);
+
     var h = Hash.init(.{});
 
-    var block: [Hash.digest_length]u8 = undefined;
-    random.bytes(block[0..]);
-
-    var offset: usize = 0;
     var timer = try Timer.start();
     const start = timer.lap();
-    while (offset < bytes) : (offset += block.len) {
-        h.update(block[0..]);
+    for (0..blocks_count) |_| {
+        h.update(&block);
     }
-    mem.doNotOptimizeAway(&h);
+    var final: [Hash.digest_length]u8 = undefined;
+    h.final(&final);
+    std.mem.doNotOptimizeAway(final);
+
     const end = timer.read();
 
-    const elapsed_s = @intToFloat(f64, end - start) / time.ns_per_s;
-    const throughput = @floatToInt(u64, bytes / elapsed_s);
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = @as(u64, @intFromFloat(bytes / elapsed_s));
 
     return throughput;
 }
 
 const macs = [_]Crypto{
     Crypto{ .ty = crypto.onetimeauth.Ghash, .name = "ghash" },
+    Crypto{ .ty = crypto.onetimeauth.Polyval, .name = "polyval" },
     Crypto{ .ty = crypto.onetimeauth.Poly1305, .name = "poly1305" },
     Crypto{ .ty = crypto.auth.hmac.HmacMd5, .name = "hmac-md5" },
     Crypto{ .ty = crypto.auth.hmac.HmacSha1, .name = "hmac-sha1" },
@@ -63,6 +72,13 @@ const macs = [_]Crypto{
     Crypto{ .ty = crypto.auth.siphash.SipHash64(1, 3), .name = "siphash-1-3" },
     Crypto{ .ty = crypto.auth.siphash.SipHash128(2, 4), .name = "siphash128-2-4" },
     Crypto{ .ty = crypto.auth.siphash.SipHash128(1, 3), .name = "siphash128-1-3" },
+    Crypto{ .ty = crypto.auth.aegis.Aegis128X4Mac, .name = "aegis-128x4 mac" },
+    Crypto{ .ty = crypto.auth.aegis.Aegis256X4Mac, .name = "aegis-256x4 mac" },
+    Crypto{ .ty = crypto.auth.aegis.Aegis128X2Mac, .name = "aegis-128x2 mac" },
+    Crypto{ .ty = crypto.auth.aegis.Aegis256X2Mac, .name = "aegis-256x2 mac" },
+    Crypto{ .ty = crypto.auth.aegis.Aegis128LMac, .name = "aegis-128l mac" },
+    Crypto{ .ty = crypto.auth.aegis.Aegis256Mac, .name = "aegis-256 mac" },
+    Crypto{ .ty = crypto.auth.cmac.CmacAes128, .name = "aes-cmac" },
 };
 
 pub fn benchmarkMac(comptime Mac: anytype, comptime bytes: comptime_int) !u64 {
@@ -83,8 +99,8 @@ pub fn benchmarkMac(comptime Mac: anytype, comptime bytes: comptime_int) !u64 {
     }
     const end = timer.read();
 
-    const elapsed_s = @intToFloat(f64, end - start) / time.ns_per_s;
-    const throughput = @floatToInt(u64, bytes / elapsed_s);
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = @as(u64, @intFromFloat(bytes / elapsed_s));
 
     return throughput;
 }
@@ -106,38 +122,43 @@ pub fn benchmarkKeyExchange(comptime DhKeyExchange: anytype, comptime exchange_c
         var i: usize = 0;
         while (i < exchange_count) : (i += 1) {
             const out = try DhKeyExchange.scalarmult(secret, public);
-            mem.copy(u8, secret[0..16], out[0..16]);
-            mem.copy(u8, public[0..16], out[16..32]);
+            secret[0..16].* = out[0..16].*;
+            public[0..16].* = out[16..32].*;
             mem.doNotOptimizeAway(&out);
         }
     }
     const end = timer.read();
 
-    const elapsed_s = @intToFloat(f64, end - start) / time.ns_per_s;
-    const throughput = @floatToInt(u64, exchange_count / elapsed_s);
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = @as(u64, @intFromFloat(exchange_count / elapsed_s));
 
     return throughput;
 }
 
-const signatures = [_]Crypto{Crypto{ .ty = crypto.sign.Ed25519, .name = "ed25519" }};
+const signatures = [_]Crypto{
+    Crypto{ .ty = crypto.sign.Ed25519, .name = "ed25519" },
+    Crypto{ .ty = crypto.sign.ecdsa.EcdsaP256Sha256, .name = "ecdsa-p256" },
+    Crypto{ .ty = crypto.sign.ecdsa.EcdsaP384Sha384, .name = "ecdsa-p384" },
+    Crypto{ .ty = crypto.sign.ecdsa.EcdsaSecp256k1Sha256, .name = "ecdsa-secp256k1" },
+};
 
 pub fn benchmarkSignature(comptime Signature: anytype, comptime signatures_count: comptime_int) !u64 {
     const msg = [_]u8{0} ** 64;
-    const key_pair = try Signature.KeyPair.create(null);
+    const key_pair = Signature.KeyPair.generate();
 
     var timer = try Timer.start();
     const start = timer.lap();
     {
         var i: usize = 0;
         while (i < signatures_count) : (i += 1) {
-            const sig = try Signature.sign(&msg, key_pair, null);
+            const sig = try key_pair.sign(&msg, null);
             mem.doNotOptimizeAway(&sig);
         }
     }
     const end = timer.read();
 
-    const elapsed_s = @intToFloat(f64, end - start) / time.ns_per_s;
-    const throughput = @floatToInt(u64, signatures_count / elapsed_s);
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = @as(u64, @intFromFloat(signatures_count / elapsed_s));
 
     return throughput;
 }
@@ -146,22 +167,22 @@ const signature_verifications = [_]Crypto{Crypto{ .ty = crypto.sign.Ed25519, .na
 
 pub fn benchmarkSignatureVerification(comptime Signature: anytype, comptime signatures_count: comptime_int) !u64 {
     const msg = [_]u8{0} ** 64;
-    const key_pair = try Signature.KeyPair.create(null);
-    const sig = try Signature.sign(&msg, key_pair, null);
+    const key_pair = Signature.KeyPair.generate();
+    const sig = try key_pair.sign(&msg, null);
 
     var timer = try Timer.start();
     const start = timer.lap();
     {
         var i: usize = 0;
         while (i < signatures_count) : (i += 1) {
-            try Signature.verify(sig, &msg, key_pair.public_key);
+            try sig.verify(&msg, key_pair.public_key);
             mem.doNotOptimizeAway(&sig);
         }
     }
     const end = timer.read();
 
-    const elapsed_s = @intToFloat(f64, end - start) / time.ns_per_s;
-    const throughput = @floatToInt(u64, signatures_count / elapsed_s);
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = @as(u64, @intFromFloat(signatures_count / elapsed_s));
 
     return throughput;
 }
@@ -170,11 +191,11 @@ const batch_signature_verifications = [_]Crypto{Crypto{ .ty = crypto.sign.Ed2551
 
 pub fn benchmarkBatchSignatureVerification(comptime Signature: anytype, comptime signatures_count: comptime_int) !u64 {
     const msg = [_]u8{0} ** 64;
-    const key_pair = try Signature.KeyPair.create(null);
-    const sig = try Signature.sign(&msg, key_pair, null);
+    const key_pair = Signature.KeyPair.generate();
+    const sig = try key_pair.sign(&msg, null);
 
     var batch: [64]Signature.BatchElement = undefined;
-    for (batch) |*element| {
+    for (&batch) |*element| {
         element.* = Signature.BatchElement{ .sig = sig, .msg = &msg, .public_key = key_pair.public_key };
     }
 
@@ -189,8 +210,74 @@ pub fn benchmarkBatchSignatureVerification(comptime Signature: anytype, comptime
     }
     const end = timer.read();
 
-    const elapsed_s = @intToFloat(f64, end - start) / time.ns_per_s;
-    const throughput = batch.len * @floatToInt(u64, signatures_count / elapsed_s);
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = batch.len * @as(u64, @intFromFloat(signatures_count / elapsed_s));
+
+    return throughput;
+}
+
+const kems = [_]Crypto{
+    Crypto{ .ty = crypto.kem.kyber_d00.Kyber512, .name = "kyber512d00" },
+    Crypto{ .ty = crypto.kem.kyber_d00.Kyber768, .name = "kyber768d00" },
+    Crypto{ .ty = crypto.kem.kyber_d00.Kyber1024, .name = "kyber1024d00" },
+};
+
+pub fn benchmarkKem(comptime Kem: anytype, comptime kems_count: comptime_int) !u64 {
+    const key_pair = Kem.KeyPair.generate();
+
+    var timer = try Timer.start();
+    const start = timer.lap();
+    {
+        var i: usize = 0;
+        while (i < kems_count) : (i += 1) {
+            const e = key_pair.public_key.encaps(null);
+            mem.doNotOptimizeAway(&e);
+        }
+    }
+    const end = timer.read();
+
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = @as(u64, @intFromFloat(kems_count / elapsed_s));
+
+    return throughput;
+}
+
+pub fn benchmarkKemDecaps(comptime Kem: anytype, comptime kems_count: comptime_int) !u64 {
+    const key_pair = Kem.KeyPair.generate();
+
+    const e = key_pair.public_key.encaps(null);
+
+    var timer = try Timer.start();
+    const start = timer.lap();
+    {
+        var i: usize = 0;
+        while (i < kems_count) : (i += 1) {
+            const ss2 = try key_pair.secret_key.decaps(&e.ciphertext);
+            mem.doNotOptimizeAway(&ss2);
+        }
+    }
+    const end = timer.read();
+
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = @as(u64, @intFromFloat(kems_count / elapsed_s));
+
+    return throughput;
+}
+
+pub fn benchmarkKemKeyGen(comptime Kem: anytype, comptime kems_count: comptime_int) !u64 {
+    var timer = try Timer.start();
+    const start = timer.lap();
+    {
+        var i: usize = 0;
+        while (i < kems_count) : (i += 1) {
+            const key_pair = Kem.KeyPair.generate();
+            mem.doNotOptimizeAway(&key_pair);
+        }
+    }
+    const end = timer.read();
+
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = @as(u64, @intFromFloat(kems_count / elapsed_s));
 
     return throughput;
 }
@@ -200,8 +287,11 @@ const aeads = [_]Crypto{
     Crypto{ .ty = crypto.aead.chacha_poly.XChaCha20Poly1305, .name = "xchacha20Poly1305" },
     Crypto{ .ty = crypto.aead.chacha_poly.XChaCha8Poly1305, .name = "xchacha8Poly1305" },
     Crypto{ .ty = crypto.aead.salsa_poly.XSalsa20Poly1305, .name = "xsalsa20Poly1305" },
-    Crypto{ .ty = crypto.aead.Gimli, .name = "gimli-aead" },
+    Crypto{ .ty = crypto.aead.aegis.Aegis128X4, .name = "aegis-128x4" },
+    Crypto{ .ty = crypto.aead.aegis.Aegis128X2, .name = "aegis-128x2" },
     Crypto{ .ty = crypto.aead.aegis.Aegis128L, .name = "aegis-128l" },
+    Crypto{ .ty = crypto.aead.aegis.Aegis256X4, .name = "aegis-256x4" },
+    Crypto{ .ty = crypto.aead.aegis.Aegis256X2, .name = "aegis-256x2" },
     Crypto{ .ty = crypto.aead.aegis.Aegis256, .name = "aegis-256" },
     Crypto{ .ty = crypto.aead.aes_gcm.Aes128Gcm, .name = "aes128-gcm" },
     Crypto{ .ty = crypto.aead.aes_gcm.Aes256Gcm, .name = "aes256-gcm" },
@@ -232,8 +322,8 @@ pub fn benchmarkAead(comptime Aead: anytype, comptime bytes: comptime_int) !u64 
     mem.doNotOptimizeAway(&in);
     const end = timer.read();
 
-    const elapsed_s = @intToFloat(f64, end - start) / time.ns_per_s;
-    const throughput = @floatToInt(u64, 2 * bytes / elapsed_s);
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = @as(u64, @intFromFloat(2 * bytes / elapsed_s));
 
     return throughput;
 }
@@ -261,8 +351,8 @@ pub fn benchmarkAes(comptime Aes: anytype, comptime count: comptime_int) !u64 {
     mem.doNotOptimizeAway(&in);
     const end = timer.read();
 
-    const elapsed_s = @intToFloat(f64, end - start) / time.ns_per_s;
-    const throughput = @floatToInt(u64, count / elapsed_s);
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = @as(u64, @intFromFloat(count / elapsed_s));
 
     return throughput;
 }
@@ -290,34 +380,48 @@ pub fn benchmarkAes8(comptime Aes: anytype, comptime count: comptime_int) !u64 {
     mem.doNotOptimizeAway(&in);
     const end = timer.read();
 
-    const elapsed_s = @intToFloat(f64, end - start) / time.ns_per_s;
-    const throughput = @floatToInt(u64, 8 * count / elapsed_s);
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = @as(u64, @intFromFloat(8 * count / elapsed_s));
 
     return throughput;
 }
 
 const CryptoPwhash = struct {
-    hashFn: anytype,
-    params: anytype,
+    ty: type,
+    params: *const anyopaque,
     name: []const u8,
 };
-const bcrypt_params = crypto.pwhash.bcrypt.Params{ .rounds_log = 12 };
+const bcrypt_params = crypto.pwhash.bcrypt.Params{ .rounds_log = 8 };
 const pwhashes = [_]CryptoPwhash{
-    .{ .hashFn = crypto.pwhash.bcrypt.strHash, .params = bcrypt_params, .name = "bcrypt" },
     .{
-        .hashFn = crypto.pwhash.scrypt.strHash,
-        .params = crypto.pwhash.scrypt.Params.interactive,
+        .ty = crypto.pwhash.bcrypt,
+        .params = &bcrypt_params,
+        .name = "bcrypt",
+    },
+    .{
+        .ty = crypto.pwhash.scrypt,
+        .params = &crypto.pwhash.scrypt.Params.interactive,
         .name = "scrypt",
+    },
+    .{
+        .ty = crypto.pwhash.argon2,
+        .params = &crypto.pwhash.argon2.Params.interactive_2id,
+        .name = "argon2",
     },
 };
 
 fn benchmarkPwhash(
-    comptime hashFn: anytype,
-    comptime params: anytype,
+    allocator: mem.Allocator,
+    comptime ty: anytype,
+    comptime params: *const anyopaque,
     comptime count: comptime_int,
-) !u64 {
+) !f64 {
     const password = "testpass" ** 2;
-    const opts = .{ .allocator = std.testing.allocator, .params = params, .encoding = .phc };
+    const opts = ty.HashOptions{
+        .allocator = allocator,
+        .params = @as(*const ty.Params, @ptrCast(@alignCast(params))).*,
+        .encoding = .phc,
+    };
     var buf: [256]u8 = undefined;
 
     var timer = try Timer.start();
@@ -325,20 +429,20 @@ fn benchmarkPwhash(
     {
         var i: usize = 0;
         while (i < count) : (i += 1) {
-            _ = try hashFn(password, opts, &buf);
+            _ = try ty.strHash(password, opts, &buf);
             mem.doNotOptimizeAway(&buf);
         }
     }
     const end = timer.read();
 
-    const elapsed_s = @intToFloat(f64, end - start) / time.ns_per_s;
-    const throughput = @floatToInt(u64, count / elapsed_s);
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = elapsed_s / count;
 
     return throughput;
 }
 
 fn usage() void {
-    std.debug.warn(
+    std.debug.print(
         \\throughput_test [options]
         \\
         \\Options:
@@ -356,9 +460,10 @@ fn mode(comptime x: comptime_int) comptime_int {
 pub fn main() !void {
     const stdout = std.io.getStdOut().writer();
 
-    var buffer: [1024]u8 = undefined;
-    var fixed = std.heap.FixedBufferAllocator.init(buffer[0..]);
-    const args = try std.process.argsAlloc(&fixed.allocator);
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    defer arena.deinit();
+    const arena_allocator = arena.allocator();
+    const args = try std.process.argsAlloc(arena_allocator);
 
     var filter: ?[]u8 = "";
 
@@ -371,7 +476,7 @@ pub fn main() !void {
             i += 1;
             if (i == args.len) {
                 usage();
-                std.os.exit(1);
+                std.process.exit(1);
             }
 
             const seed = try std.fmt.parseUnsigned(u32, args[i], 10);
@@ -380,7 +485,7 @@ pub fn main() !void {
             i += 1;
             if (i == args.len) {
                 usage();
-                std.os.exit(1);
+                std.process.exit(1);
             }
 
             filter = args[i];
@@ -389,7 +494,7 @@ pub fn main() !void {
             return;
         } else {
             usage();
-            std.os.exit(1);
+            std.process.exit(1);
         }
     }
 
@@ -458,8 +563,29 @@ pub fn main() !void {
 
     inline for (pwhashes) |H| {
         if (filter == null or std.mem.indexOf(u8, H.name, filter.?) != null) {
-            const throughput = try benchmarkPwhash(H.hashFn, H.params, mode(64));
-            try stdout.print("{s:>17}: {:10} ops/s\n", .{ H.name, throughput });
+            const throughput = try benchmarkPwhash(arena_allocator, H.ty, H.params, mode(64));
+            try stdout.print("{s:>17}: {d:10.3} s/ops\n", .{ H.name, throughput });
+        }
+    }
+
+    inline for (kems) |E| {
+        if (filter == null or std.mem.indexOf(u8, E.name, filter.?) != null) {
+            const throughput = try benchmarkKem(E.ty, mode(1000));
+            try stdout.print("{s:>17}: {:10} encaps/s\n", .{ E.name, throughput });
+        }
+    }
+
+    inline for (kems) |E| {
+        if (filter == null or std.mem.indexOf(u8, E.name, filter.?) != null) {
+            const throughput = try benchmarkKemDecaps(E.ty, mode(25000));
+            try stdout.print("{s:>17}: {:10} decaps/s\n", .{ E.name, throughput });
+        }
+    }
+
+    inline for (kems) |E| {
+        if (filter == null or std.mem.indexOf(u8, E.name, filter.?) != null) {
+            const throughput = try benchmarkKemKeyGen(E.ty, mode(25000));
+            try stdout.print("{s:>17}: {:10} keygen/s\n", .{ E.name, throughput });
         }
     }
 }

@@ -1,38 +1,38 @@
 const std = @import("std");
 
 pub inline fn __builtin_bswap16(val: u16) u16 {
-    return @byteSwap(u16, val);
+    return @byteSwap(val);
 }
 pub inline fn __builtin_bswap32(val: u32) u32 {
-    return @byteSwap(u32, val);
+    return @byteSwap(val);
 }
 pub inline fn __builtin_bswap64(val: u64) u64 {
-    return @byteSwap(u64, val);
+    return @byteSwap(val);
 }
 
 pub inline fn __builtin_signbit(val: f64) c_int {
-    return @boolToInt(std.math.signbit(val));
+    return @intFromBool(std.math.signbit(val));
 }
 pub inline fn __builtin_signbitf(val: f32) c_int {
-    return @boolToInt(std.math.signbit(val));
+    return @intFromBool(std.math.signbit(val));
 }
 
 pub inline fn __builtin_popcount(val: c_uint) c_int {
     // popcount of a c_uint will never exceed the capacity of a c_int
     @setRuntimeSafety(false);
-    return @bitCast(c_int, @as(c_uint, @popCount(c_uint, val)));
+    return @as(c_int, @bitCast(@as(c_uint, @popCount(val))));
 }
 pub inline fn __builtin_ctz(val: c_uint) c_int {
     // Returns the number of trailing 0-bits in val, starting at the least significant bit position.
     // In C if `val` is 0, the result is undefined; in zig it's the number of bits in a c_uint
     @setRuntimeSafety(false);
-    return @bitCast(c_int, @as(c_uint, @ctz(c_uint, val)));
+    return @as(c_int, @bitCast(@as(c_uint, @ctz(val))));
 }
 pub inline fn __builtin_clz(val: c_uint) c_int {
     // Returns the number of leading 0-bits in x, starting at the most significant bit position.
     // In C if `val` is 0, the result is undefined; in zig it's the number of bits in a c_uint
     @setRuntimeSafety(false);
-    return @bitCast(c_int, @as(c_uint, @clz(c_uint, val)));
+    return @as(c_int, @bitCast(@as(c_uint, @clz(val))));
 }
 
 pub inline fn __builtin_sqrt(val: f64) f64 {
@@ -88,13 +88,19 @@ pub inline fn __builtin_log10f(val: f32) f32 {
 
 // Standard C Library bug: The absolute value of the most negative integer remains negative.
 pub inline fn __builtin_abs(val: c_int) c_int {
-    return std.math.absInt(val) catch std.math.minInt(c_int);
+    return if (val == std.math.minInt(c_int)) val else @intCast(@abs(val));
+}
+pub inline fn __builtin_labs(val: c_long) c_long {
+    return if (val == std.math.minInt(c_long)) val else @intCast(@abs(val));
+}
+pub inline fn __builtin_llabs(val: c_longlong) c_longlong {
+    return if (val == std.math.minInt(c_longlong)) val else @intCast(@abs(val));
 }
 pub inline fn __builtin_fabs(val: f64) f64 {
-    return @fabs(val);
+    return @abs(val);
 }
 pub inline fn __builtin_fabsf(val: f32) f32 {
-    return @fabs(val);
+    return @abs(val);
 }
 
 pub inline fn __builtin_floor(val: f64) f64 {
@@ -123,58 +129,62 @@ pub inline fn __builtin_roundf(val: f32) f32 {
 }
 
 pub inline fn __builtin_strlen(s: [*c]const u8) usize {
-    return std.mem.lenZ(s);
+    return std.mem.sliceTo(s, 0).len;
 }
 pub inline fn __builtin_strcmp(s1: [*c]const u8, s2: [*c]const u8) c_int {
-    return @as(c_int, std.cstr.cmp(s1, s2));
+    return switch (std.mem.orderZ(u8, s1, s2)) {
+        .lt => -1,
+        .eq => 0,
+        .gt => 1,
+    };
 }
 
-pub inline fn __builtin_object_size(ptr: ?*const c_void, ty: c_int) usize {
+pub inline fn __builtin_object_size(ptr: ?*const anyopaque, ty: c_int) usize {
     _ = ptr;
     // clang semantics match gcc's: https://gcc.gnu.org/onlinedocs/gcc/Object-Size-Checking.html
     // If it is not possible to determine which objects ptr points to at compile time,
     // __builtin_object_size should return (size_t) -1 for type 0 or 1 and (size_t) 0
     // for type 2 or 3.
-    if (ty == 0 or ty == 1) return @bitCast(usize, -@as(isize, 1));
+    if (ty == 0 or ty == 1) return @as(usize, @bitCast(-@as(isize, 1)));
     if (ty == 2 or ty == 3) return 0;
     unreachable;
 }
 
 pub inline fn __builtin___memset_chk(
-    dst: ?*c_void,
+    dst: ?*anyopaque,
     val: c_int,
     len: usize,
     remaining: usize,
-) ?*c_void {
+) ?*anyopaque {
     if (len > remaining) @panic("std.c.builtins.memset_chk called with len > remaining");
     return __builtin_memset(dst, val, len);
 }
 
-pub inline fn __builtin_memset(dst: ?*c_void, val: c_int, len: usize) ?*c_void {
-    const dst_cast = @ptrCast([*c]u8, dst);
-    @memset(dst_cast, @bitCast(u8, @truncate(i8, val)), len);
+pub inline fn __builtin_memset(dst: ?*anyopaque, val: c_int, len: usize) ?*anyopaque {
+    const dst_cast = @as([*c]u8, @ptrCast(dst));
+    @memset(dst_cast[0..len], @as(u8, @bitCast(@as(i8, @truncate(val)))));
     return dst;
 }
 
 pub inline fn __builtin___memcpy_chk(
-    noalias dst: ?*c_void,
-    noalias src: ?*const c_void,
+    noalias dst: ?*anyopaque,
+    noalias src: ?*const anyopaque,
     len: usize,
     remaining: usize,
-) ?*c_void {
+) ?*anyopaque {
     if (len > remaining) @panic("std.c.builtins.memcpy_chk called with len > remaining");
     return __builtin_memcpy(dst, src, len);
 }
 
 pub inline fn __builtin_memcpy(
-    noalias dst: ?*c_void,
-    noalias src: ?*const c_void,
+    noalias dst: ?*anyopaque,
+    noalias src: ?*const anyopaque,
     len: usize,
-) ?*c_void {
-    const dst_cast = @ptrCast([*c]u8, dst);
-    const src_cast = @ptrCast([*c]const u8, src);
-
-    @memcpy(dst_cast, src_cast, len);
+) ?*anyopaque {
+    if (len > 0) @memcpy(
+        @as([*]u8, @ptrCast(dst.?))[0..len],
+        @as([*]const u8, @ptrCast(src.?)),
+    );
     return dst;
 }
 
@@ -202,8 +212,8 @@ pub inline fn __builtin_expect(expr: c_long, c: c_long) c_long {
 /// If tagp is empty, the function returns a NaN whose significand is zero.
 pub inline fn __builtin_nanf(tagp: []const u8) f32 {
     const parsed = std.fmt.parseUnsigned(c_ulong, tagp, 0) catch 0;
-    const bits = @truncate(u23, parsed); // single-precision float trailing significand is 23 bits
-    return @bitCast(f32, @as(u32, bits) | std.math.qnan_u32);
+    const bits: u23 = @truncate(parsed); // single-precision float trailing significand is 23 bits
+    return @bitCast(@as(u32, bits) | @as(u32, @bitCast(std.math.nan(f32))));
 }
 
 pub inline fn __builtin_huge_valf() f32 {
@@ -215,11 +225,11 @@ pub inline fn __builtin_inff() f32 {
 }
 
 pub inline fn __builtin_isnan(x: anytype) c_int {
-    return @boolToInt(std.math.isNan(x));
+    return @intFromBool(std.math.isNan(x));
 }
 
 pub inline fn __builtin_isinf(x: anytype) c_int {
-    return @boolToInt(std.math.isInf(x));
+    return @intFromBool(std.math.isInf(x));
 }
 
 /// Similar to isinf, except the return value is -1 for an argument of -Inf and 1 for an argument of +Inf.
@@ -228,8 +238,31 @@ pub inline fn __builtin_isinf_sign(x: anytype) c_int {
     return if (std.math.isPositiveInf(x)) 1 else -1;
 }
 
+pub inline fn __has_builtin(func: anytype) c_int {
+    _ = func;
+    return @intFromBool(true);
+}
+
+pub inline fn __builtin_assume(cond: bool) void {
+    if (!cond) unreachable;
+}
+
+pub inline fn __builtin_unreachable() noreturn {
+    unreachable;
+}
+
+pub inline fn __builtin_constant_p(expr: anytype) c_int {
+    _ = expr;
+    return @intFromBool(false);
+}
+pub fn __builtin_mul_overflow(a: anytype, b: anytype, result: *@TypeOf(a, b)) c_int {
+    const res = @mulWithOverflow(a, b);
+    result.* = res[0];
+    return res[1];
+}
+
 // __builtin_alloca_with_align is not currently implemented.
 // It is used in a run-translated-c test and a test-translate-c test to ensure that non-implemented
 // builtins are correctly demoted. If you implement __builtin_alloca_with_align, please update the
 // run-translated-c test and the test-translate-c test to use a different non-implemented builtin.
-// pub fn __builtin_alloca_with_align(size: usize, alignment: usize) callconv(.Inline) *c_void {}
+// pub inline fn __builtin_alloca_with_align(size: usize, alignment: usize) *anyopaque {}

@@ -35,6 +35,10 @@ const known_options = [_]KnownOpt{
         .ident = "c",
     },
     .{
+        .name = "r",
+        .ident = "r",
+    },
+    .{
         .name = "l",
         .ident = "l",
     },
@@ -151,6 +155,10 @@ const known_options = [_]KnownOpt{
         .ident = "wl",
     },
     .{
+        .name = "Wp,",
+        .ident = "wp",
+    },
+    .{
         .name = "Xlinker",
         .ident = "for_linker",
     },
@@ -237,23 +245,31 @@ const known_options = [_]KnownOpt{
         .ident = "debug",
     },
     .{
-        .name = "g-dwarf",
+        .name = "gdwarf32",
+        .ident = "gdwarf32",
+    },
+    .{
+        .name = "gdwarf64",
+        .ident = "gdwarf64",
+    },
+    .{
+        .name = "gdwarf",
         .ident = "debug",
     },
     .{
-        .name = "g-dwarf-2",
+        .name = "gdwarf-2",
         .ident = "debug",
     },
     .{
-        .name = "g-dwarf-3",
+        .name = "gdwarf-3",
         .ident = "debug",
     },
     .{
-        .name = "g-dwarf-4",
+        .name = "gdwarf-4",
         .ident = "debug",
     },
     .{
-        .name = "g-dwarf-5",
+        .name = "gdwarf-5",
         .ident = "debug",
     },
     .{
@@ -270,6 +286,10 @@ const known_options = [_]KnownOpt{
     },
     .{
         .name = "v",
+        .ident = "verbose",
+    },
+    .{
+        .name = "verbose",
         .ident = "verbose",
     },
     .{
@@ -309,6 +329,74 @@ const known_options = [_]KnownOpt{
         .ident = "no_omit_frame_pointer",
     },
     .{
+        .name = "ffunction-sections",
+        .ident = "function_sections",
+    },
+    .{
+        .name = "fno-function-sections",
+        .ident = "no_function_sections",
+    },
+    .{
+        .name = "fdata-sections",
+        .ident = "data_sections",
+    },
+    .{
+        .name = "fno-data-sections",
+        .ident = "no_data_sections",
+    },
+    .{
+        .name = "fbuiltin",
+        .ident = "builtin",
+    },
+    .{
+        .name = "fno-builtin",
+        .ident = "no_builtin",
+    },
+    .{
+        .name = "fcolor-diagnostics",
+        .ident = "color_diagnostics",
+    },
+    .{
+        .name = "fno-color-diagnostics",
+        .ident = "no_color_diagnostics",
+    },
+    .{
+        .name = "fcaret-diagnostics",
+        .ident = "color_diagnostics",
+    },
+    .{
+        .name = "fno-caret-diagnostics",
+        .ident = "no_color_diagnostics",
+    },
+    .{
+        .name = "fstack-check",
+        .ident = "stack_check",
+    },
+    .{
+        .name = "fno-stack-check",
+        .ident = "no_stack_check",
+    },
+    .{
+        .name = "stack-protector",
+        .ident = "stack_protector",
+    },
+    .{
+        .name = "fstack-protector",
+        .ident = "stack_protector",
+    },
+    .{
+        .name = "fno-stack-protector",
+        .ident = "no_stack_protector",
+    },
+    .{
+        .name = "fstack-protector-strong",
+        .ident = "stack_protector",
+    },
+    .{
+        .name = "fstack-protector-all",
+        .ident = "stack_protector",
+    },
+    .{
         .name = "MD",
         .ident = "dep_file",
     },
@@ -342,11 +430,15 @@ const known_options = [_]KnownOpt{
     },
     .{
         .name = "MM",
-        .ident = "dep_file_mm",
+        .ident = "dep_file_to_stdout",
+    },
+    .{
+        .name = "M",
+        .ident = "dep_file_to_stdout",
     },
     .{
         .name = "user-dependencies",
-        .ident = "dep_file_mm",
+        .ident = "dep_file_to_stdout",
     },
     .{
         .name = "MMD",
@@ -388,6 +480,86 @@ const known_options = [_]KnownOpt{
         .name = "emit-llvm",
         .ident = "emit_llvm",
     },
+    .{
+        .name = "sysroot",
+        .ident = "sysroot",
+    },
+    .{
+        .name = "entry",
+        .ident = "entry",
+    },
+    .{
+        .name = "e",
+        .ident = "entry",
+    },
+    .{
+        .name = "u",
+        .ident = "force_undefined_symbol",
+    },
+    .{
+        .name = "weak-l",
+        .ident = "weak_library",
+    },
+    .{
+        .name = "weak_library",
+        .ident = "weak_library",
+    },
+    .{
+        .name = "weak_framework",
+        .ident = "weak_framework",
+    },
+    .{
+        .name = "headerpad_max_install_names",
+        .ident = "headerpad_max_install_names",
+    },
+    .{
+        .name = "compress-debug-sections",
+        .ident = "compress_debug_sections",
+    },
+    .{
+        .name = "compress-debug-sections=",
+        .ident = "compress_debug_sections",
+    },
+    .{
+        .name = "install_name",
+        .ident = "install_name",
+    },
+    .{
+        .name = "undefined",
+        .ident = "undefined",
+    },
+    .{
+        .name = "x",
+        .ident = "x",
+    },
+    .{
+        .name = "ObjC",
+        .ident = "force_load_objc",
+    },
+    .{
+        .name = "municode",
+        .ident = "mingw_unicode_entry_point",
+    },
+    .{
+        .name = "fsanitize-coverage-trace-pc-guard",
+        .ident = "san_cov_trace_pc_guard",
+    },
+    .{
+        .name = "fsanitize-coverage",
+        .ident = "san_cov",
+    },
+    .{
+        .name = "fno-sanitize-coverage",
+        .ident = "no_san_cov",
+    },
+    .{
+        .name = "rtlib",
+        .ident = "rtlib",
+    },
+    .{
+        .name = "rtlib=",
+        .ident = "rtlib",
+    },
 };
 
 const blacklisted_options = [_][]const u8{};
@@ -402,11 +574,36 @@ fn knownOption(name: []const u8) ?[]const u8 {
     return null;
 }
 
+const cpu_targets = struct {
+    pub const aarch64 = std.Target.aarch64;
+    pub const amdgcn = std.Target.amdgcn;
+    pub const arc = std.Target.arc;
+    pub const arm = std.Target.arm;
+    pub const avr = std.Target.avr;
+    pub const bpf = std.Target.bpf;
+    pub const csky = std.Target.csky;
+    pub const hexagon = std.Target.hexagon;
+    pub const loongarch = std.Target.loongarch;
+    pub const m68k = std.Target.m68k;
+    pub const mips = std.Target.mips;
+    pub const msp430 = std.Target.msp430;
+    pub const nvptx = std.Target.nvptx;
+    pub const powerpc = std.Target.powerpc;
+    pub const riscv = std.Target.riscv;
+    pub const s390x = std.Target.s390x;
+    pub const sparc = std.Target.sparc;
+    pub const spirv = std.Target.spirv;
+    pub const ve = std.Target.ve;
+    pub const wasm = std.Target.wasm;
+    pub const x86 = std.Target.x86;
+    pub const xtensa = std.Target.xtensa;
+};
+
 pub fn main() anyerror!void {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    const allocator = &arena.allocator;
+    const allocator = arena.allocator();
     const args = try std.process.argsAlloc(allocator);
 
     if (args.len <= 1) {
@@ -429,6 +626,20 @@ pub fn main() anyerror!void {
         usageAndExit(std.io.getStdErr(), args[0], 1);
     }
 
+    var llvm_to_zig_cpu_features = std.StringHashMap([]const u8).init(allocator);
+
+    inline for (@typeInfo(cpu_targets).@"struct".decls) |decl| {
+        const Feature = @field(cpu_targets, decl.name).Feature;
+        const all_features = @field(cpu_targets, decl.name).all_features;
+
+        for (all_features, 0..) |feat, i| {
+            const llvm_name = feat.llvm_name orelse continue;
+            const zig_feat = @as(Feature, @enumFromInt(i));
+            const zig_name = @tagName(zig_feat);
+            try llvm_to_zig_cpu_features.put(llvm_name, zig_name);
+        }
+    }
+
     const child_args = [_][]const u8{
         llvm_tblgen_exe,
         "--dump-json",
@@ -437,28 +648,28 @@ pub fn main() anyerror!void {
         try std.fmt.allocPrint(allocator, "-I={s}/clang/include/clang/Driver", .{llvm_src_root}),
     };
 
-    const child_result = try std.ChildProcess.exec(.{
+    const child_result = try std.process.Child.run(.{
         .allocator = allocator,
         .argv = &child_args,
         .max_output_bytes = 100 * 1024 * 1024,
     });
 
-    std.debug.warn("{s}\n", .{child_result.stderr});
+    std.debug.print("{s}\n", .{child_result.stderr});
 
     const json_text = switch (child_result.term) {
         .Exited => |code| if (code == 0) child_result.stdout else {
-            std.debug.warn("llvm-tblgen exited with code {d}\n", .{code});
+            std.debug.print("llvm-tblgen exited with code {d}\n", .{code});
             std.process.exit(1);
         },
         else => {
-            std.debug.warn("llvm-tblgen crashed\n", .{});
+            std.debug.print("llvm-tblgen crashed\n", .{});
             std.process.exit(1);
         },
     };
 
-    var parser = json.Parser.init(allocator, false);
-    const tree = try parser.parse(json_text);
-    const root_map = &tree.root.Object;
+    const parsed = try json.parseFromSlice(json.Value, allocator, json_text, .{});
+    defer parsed.deinit();
+    const root_map = &parsed.value.object;
 
     var all_objects = std.ArrayList(*json.ObjectMap).init(allocator);
     {
@@ -466,19 +677,19 @@ pub fn main() anyerror!void {
         it_map: while (it.next()) |kv| {
             if (kv.key_ptr.len == 0) continue;
             if (kv.key_ptr.*[0] == '!') continue;
-            if (kv.value_ptr.* != .Object) continue;
-            if (!kv.value_ptr.Object.contains("NumArgs")) continue;
-            if (!kv.value_ptr.Object.contains("Name")) continue;
+            if (kv.value_ptr.* != .object) continue;
+            if (!kv.value_ptr.object.contains("NumArgs")) continue;
+            if (!kv.value_ptr.object.contains("Name")) continue;
             for (blacklisted_options) |blacklisted_key| {
                 if (std.mem.eql(u8, blacklisted_key, kv.key_ptr.*)) continue :it_map;
             }
-            if (kv.value_ptr.Object.get("Name").?.String.len == 0) continue;
-            try all_objects.append(&kv.value_ptr.Object);
+            if (kv.value_ptr.object.get("Name").?.string.len == 0) continue;
+            try all_objects.append(&kv.value_ptr.object);
         }
     }
     // Some options have multiple matches. As an example, "-Wl,foo" matches both
     // "W" and "Wl,". So we sort this list in order of descending priority.
-    std.sort.sort(*json.ObjectMap, all_objects.items, {}, objectLessThan);
+    std.mem.sort(*json.ObjectMap, all_objects.items, {}, objectLessThan);
 
     var buffered_stdout = std.io.bufferedWriter(std.io.getStdOut().writer());
     const stdout = buffered_stdout.writer();
@@ -492,17 +703,18 @@ pub fn main() anyerror!void {
         \\const joinpd1 = clang_options.joinpd1;
         \\const jspd1 = clang_options.jspd1;
         \\const sepd1 = clang_options.sepd1;
+        \\const m = clang_options.m;
         \\pub const data = blk: { @setEvalBranchQuota(6000); break :blk &[_]CliArg{
         \\
     );
 
     for (all_objects.items) |obj| {
-        const name = obj.get("Name").?.String;
+        const name = obj.get("Name").?.string;
         var pd1 = false;
         var pd2 = false;
         var pslash = false;
-        for (obj.get("Prefixes").?.Array.items) |prefix_json| {
-            const prefix = prefix_json.String;
+        for (obj.get("Prefixes").?.array.items) |prefix_json| {
+            const prefix = prefix_json.string;
             if (std.mem.eql(u8, prefix, "-")) {
                 pd1 = true;
             } else if (std.mem.eql(u8, prefix, "--")) {
@@ -510,11 +722,11 @@ pub fn main() anyerror!void {
             } else if (std.mem.eql(u8, prefix, "/")) {
                 pslash = true;
             } else {
-                std.debug.warn("{s} has unrecognized prefix '{s}'\n", .{ name, prefix });
+                std.debug.print("{s} has unrecognized prefix '{s}'\n", .{ name, prefix });
                 std.process.exit(1);
             }
         }
-        const syntax = objSyntax(obj);
+        const syntax = objSyntax(obj) orelse continue;
 
         if (std.mem.eql(u8, name, "MT") and syntax == .flag) {
             // `-MT foo` is ambiguous because there is also an -MT flag
@@ -531,14 +743,22 @@ pub fn main() anyerror!void {
                 \\    .name = "{s}",
                 \\    .syntax = {s},
                 \\    .zig_equivalent = .{s},
-                \\    .pd1 = {s},
-                \\    .pd2 = {s},
-                \\    .psl = {s},
+                \\    .pd1 = {},
+                \\    .pd2 = {},
+                \\    .psl = {},
                 \\}},
                 \\
             , .{ name, final_syntax, ident, pd1, pd2, pslash });
         } else if (pd1 and !pd2 and !pslash and syntax == .flag) {
-            try stdout.print("flagpd1(\"{s}\"),\n", .{name});
+            if ((std.mem.startsWith(u8, name, "mno-") and
+                llvm_to_zig_cpu_features.contains(name["mno-".len..])) or
+                (std.mem.startsWith(u8, name, "m") and
+                llvm_to_zig_cpu_features.contains(name["m".len..])))
+            {
+                try stdout.print("m(\"{s}\"),\n", .{name});
+            } else {
+                try stdout.print("flagpd1(\"{s}\"),\n", .{name});
+            }
         } else if (!pd1 and !pd2 and pslash and syntax == .flag) {
             try stdout.print("flagpsl(\"{s}\"),\n", .{name});
         } else if (pd1 and !pd2 and !pslash and syntax == .joined) {
@@ -553,9 +773,9 @@ pub fn main() anyerror!void {
                 \\    .name = "{s}",
                 \\    .syntax = {s},
                 \\    .zig_equivalent = .other,
-                \\    .pd1 = {s},
-                \\    .pd2 = {s},
-                \\    .psl = {s},
+                \\    .pd1 = {},
+                \\    .pd2 = {},
+                \\    .psl = {},
                 \\}},
                 \\
             , .{ name, syntax, pd1, pd2, pslash });
@@ -612,10 +832,10 @@ const Syntax = union(enum) {
     }
 };
 
-fn objSyntax(obj: *json.ObjectMap) Syntax {
-    const num_args = @intCast(u8, obj.get("NumArgs").?.Integer);
-    for (obj.get("!superclasses").?.Array.items) |superclass_json| {
-        const superclass = superclass_json.String;
+fn objSyntax(obj: *json.ObjectMap) ?Syntax {
+    const num_args = @as(u8, @intCast(obj.get("NumArgs").?.integer));
+    for (obj.get("!superclasses").?.array.items) |superclass_json| {
+        const superclass = superclass_json.string;
         if (std.mem.eql(u8, superclass, "Joined")) {
             return .joined;
         } else if (std.mem.eql(u8, superclass, "CLJoined")) {
@@ -624,11 +844,17 @@ fn objSyntax(obj: *json.ObjectMap) Syntax {
             return .joined;
         } else if (std.mem.eql(u8, superclass, "CLCompileJoined")) {
             return .joined;
+        } else if (std.mem.eql(u8, superclass, "CLDXCJoined")) {
+            return .joined;
         } else if (std.mem.eql(u8, superclass, "JoinedOrSeparate")) {
             return .joined_or_separate;
         } else if (std.mem.eql(u8, superclass, "CLJoinedOrSeparate")) {
             return .joined_or_separate;
         } else if (std.mem.eql(u8, superclass, "CLCompileJoinedOrSeparate")) {
+            return .joined_or_separate;
+        } else if (std.mem.eql(u8, superclass, "DXCJoinedOrSeparate")) {
+            return .joined_or_separate;
+        } else if (std.mem.eql(u8, superclass, "CLDXCJoinedOrSeparate")) {
             return .joined_or_separate;
         } else if (std.mem.eql(u8, superclass, "Flag")) {
             return .flag;
@@ -648,22 +874,23 @@ fn objSyntax(obj: *json.ObjectMap) Syntax {
             return .{ .multi_arg = num_args };
         }
     }
-    const name = obj.get("Name").?.String;
+    const name = obj.get("Name").?.string;
     if (std.mem.eql(u8, name, "<input>")) {
         return .flag;
     } else if (std.mem.eql(u8, name, "<unknown>")) {
         return .flag;
     }
-    const kind_def = obj.get("Kind").?.Object.get("def").?.String;
+    const kind_def = obj.get("Kind").?.object.get("def").?.string;
     if (std.mem.eql(u8, kind_def, "KIND_FLAG")) {
         return .flag;
     }
-    const key = obj.get("!name").?.String;
-    std.debug.warn("{s} (key {s}) has unrecognized superclasses:\n", .{ name, key });
-    for (obj.get("!superclasses").?.Array.items) |superclass_json| {
-        std.debug.warn(" {s}\n", .{superclass_json.String});
+    const key = obj.get("!name").?.string;
+    std.debug.print("{s} (key {s}) has unrecognized superclasses:\n", .{ name, key });
+    for (obj.get("!superclasses").?.array.items) |superclass_json| {
+        std.debug.print(" {s}\n", .{superclass_json.string});
     }
-    std.process.exit(1);
+    //std.process.exit(1);
+    return null;
 }
 
 fn syntaxMatchesWithEql(syntax: Syntax) bool {
@@ -686,8 +913,8 @@ fn objectLessThan(context: void, a: *json.ObjectMap, b: *json.ObjectMap) bool {
     _ = context;
     // Priority is determined by exact matches first, followed by prefix matches in descending
     // length, with key as a final tiebreaker.
-    const a_syntax = objSyntax(a);
-    const b_syntax = objSyntax(b);
+    const a_syntax = objSyntax(a) orelse return false;
+    const b_syntax = objSyntax(b) orelse return true;
 
     const a_match_with_eql = syntaxMatchesWithEql(a_syntax);
     const b_match_with_eql = syntaxMatchesWithEql(b_syntax);
@@ -699,15 +926,15 @@ fn objectLessThan(context: void, a: *json.ObjectMap, b: *json.ObjectMap) bool {
     }
 
     if (!a_match_with_eql and !b_match_with_eql) {
-        const a_name = a.get("Name").?.String;
-        const b_name = b.get("Name").?.String;
+        const a_name = a.get("Name").?.string;
+        const b_name = b.get("Name").?.string;
         if (a_name.len != b_name.len) {
             return a_name.len > b_name.len;
         }
     }
 
-    const a_key = a.get("!name").?.String;
-    const b_key = b.get("!name").?.String;
+    const a_key = a.get("!name").?.string;
+    const b_key = b.get("!name").?.string;
     return std.mem.lessThan(u8, a_key, b_key);
 }
 

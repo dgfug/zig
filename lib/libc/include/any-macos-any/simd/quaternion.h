@@ -234,11 +234,11 @@ namespace simd {
   static SIMD_CPPFUNC quatf operator*(const ::simd_quatf p, const float r) { return ::simd_mul(p, r); }
   static SIMD_CPPFUNC quatf operator*(const ::simd_quatf p, const ::simd_quatf q) { return ::simd_mul(p, q); }
   static SIMD_CPPFUNC quatf operator/(const ::simd_quatf p, const ::simd_quatf q) { return ::simd_mul(p, ::simd_inverse(q)); }
-  static SIMD_CPPFUNC quatf operator+=(quatf &p, const ::simd_quatf q) { return p = p+q; }
-  static SIMD_CPPFUNC quatf operator-=(quatf &p, const ::simd_quatf q) { return p = p-q; }
-  static SIMD_CPPFUNC quatf operator*=(quatf &p, const float r) { return p = p*r; }
-  static SIMD_CPPFUNC quatf operator*=(quatf &p, const ::simd_quatf q) { return p = p*q; }
-  static SIMD_CPPFUNC quatf operator/=(quatf &p, const ::simd_quatf q) { return p = p/q; }
+  static SIMD_INLINE SIMD_NODEBUG quatf operator+=(quatf &p, const ::simd_quatf q) { return p = p+q; }
+  static SIMD_INLINE SIMD_NODEBUG quatf operator-=(quatf &p, const ::simd_quatf q) { return p = p-q; }
+  static SIMD_INLINE SIMD_NODEBUG quatf operator*=(quatf &p, const float r) { return p = p*r; }
+  static SIMD_INLINE SIMD_NODEBUG quatf operator*=(quatf &p, const ::simd_quatf q) { return p = p*q; }
+  static SIMD_INLINE SIMD_NODEBUG quatf operator/=(quatf &p, const ::simd_quatf q) { return p = p/q; }
   
   /*! @abstract The conjugate of the quaternion `q`.                          */
   static SIMD_CPPFUNC quatf conjugate(const ::simd_quatf p) { return ::simd_conjugate(p); }
@@ -435,9 +435,9 @@ static SIMD_NOINLINE simd_quatf simd_quaternion(simd_float3 from, simd_float3 to
   //  Because from and to are more than 90 degrees apart, we compute the
   //  rotation in two stages (from -> half), (half -> to) to preserve numerical
   //  accuracy.
-  simd_float3 half = from + to;
+  simd_float3 half = simd_normalize(from) + simd_normalize(to);
   
-  if (simd_length_squared(half) == 0) {
+  if (simd_length_squared(half) <= 0x1p-46f) {
     //  half is nearly zero, so from and to point in nearly opposite directions
     //  and the rotation is numerically underspecified. Pick an axis orthogonal
     //  to the vectors, and use an angle of pi radians.
@@ -820,11 +820,11 @@ namespace simd {
   static SIMD_CPPFUNC quatd operator*(const ::simd_quatd p, const double r) { return ::simd_mul(p, r); }
   static SIMD_CPPFUNC quatd operator*(const ::simd_quatd p, const ::simd_quatd q) { return ::simd_mul(p, q); }
   static SIMD_CPPFUNC quatd operator/(const ::simd_quatd p, const ::simd_quatd q) { return ::simd_mul(p, ::simd_inverse(q)); }
-  static SIMD_CPPFUNC quatd operator+=(quatd &p, const ::simd_quatd q) { return p = p+q; }
-  static SIMD_CPPFUNC quatd operator-=(quatd &p, const ::simd_quatd q) { return p = p-q; }
-  static SIMD_CPPFUNC quatd operator*=(quatd &p, const double r) { return p = p*r; }
-  static SIMD_CPPFUNC quatd operator*=(quatd &p, const ::simd_quatd q) { return p = p*q; }
-  static SIMD_CPPFUNC quatd operator/=(quatd &p, const ::simd_quatd q) { return p = p/q; }
+  static SIMD_INLINE SIMD_NODEBUG quatd operator+=(quatd &p, const ::simd_quatd q) { return p = p+q; }
+  static SIMD_INLINE SIMD_NODEBUG quatd operator-=(quatd &p, const ::simd_quatd q) { return p = p-q; }
+  static SIMD_INLINE SIMD_NODEBUG quatd operator*=(quatd &p, const double r) { return p = p*r; }
+  static SIMD_INLINE SIMD_NODEBUG quatd operator*=(quatd &p, const ::simd_quatd q) { return p = p*q; }
+  static SIMD_INLINE SIMD_NODEBUG quatd operator/=(quatd &p, const ::simd_quatd q) { return p = p/q; }
   
   /*! @abstract The conjugate of the quaternion `q`.                          */
   static SIMD_CPPFUNC quatd conjugate(const ::simd_quatd p) { return ::simd_conjugate(p); }
@@ -1021,9 +1021,9 @@ static SIMD_NOINLINE simd_quatd simd_quaternion(simd_double3 from, simd_double3 
   //  Because from and to are more than 90 degrees apart, we compute the
   //  rotation in two stages (from -> half), (half -> to) to preserve numerical
   //  accuracy.
-  simd_double3 half = from + to;
+  simd_double3 half = simd_normalize(from) + simd_normalize(to);
   
-  if (simd_length_squared(half) == 0) {
+  if (simd_length_squared(half) <= 0x1p-104) {
     //  half is nearly zero, so from and to point in nearly opposite directions
     //  and the rotation is numerically underspecified. Pick an axis orthogonal
     //  to the vectors, and use an angle of pi radians.

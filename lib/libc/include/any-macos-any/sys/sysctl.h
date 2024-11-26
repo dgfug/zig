@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2019 Apple Inc. All rights reserved.
+ * Copyright (c) 2000-2021 Apple Inc. All rights reserved.
  *
  * @APPLE_OSREFERENCE_LICENSE_HEADER_START@
  *
@@ -229,7 +229,7 @@ struct ctlname {
 #define KERN_NISDOMAINNAME      22      /* string: YP domain name */
 #define KERN_DOMAINNAME         KERN_NISDOMAINNAME
 #define KERN_MAXPARTITIONS      23      /* int: number of partitions/disk */
-#define KERN_KDEBUG                     24      /* int: kernel trace points */
+#define KERN_KDEBUG             24      /* int: kernel trace points */
 #define KERN_UPDATEINTERVAL     25      /* int: update process sleep time */
 #define KERN_OSRELDATE          26      /* int: OS release date */
 #define KERN_NTP_PLL            27      /* node: NTP PLL control */
@@ -338,8 +338,9 @@ struct ctlname {
 #define KERN_KDSET_TYPEFILTER 22
 #define KERN_KDBUFWAIT        23
 #define KERN_KDCPUMAP         24
-/* 25 - 26 unused */
-#define KERN_KDWRITEMAP_V3    27
+#define KERN_KDCPUMAP_EXT     25
+#define KERN_KDSET_EDM        26
+#define KERN_KDGET_EDM        27
 #define KERN_KDWRITETR_V3     28
 
 #define CTL_KERN_NAMES { \
@@ -667,6 +668,28 @@ extern struct loadavg averunnable;
  *   hw.l1icachesize           - then the selector will return and error.
  *   hw.l2cachesize            -
  *   hw.l3cachesize            -
+ *
+ *   hw.nperflevels            - Number of core types in the system. See the parameters below, which can be used to get
+ *                             - information associated with a specific perf level.
+ *
+ *   The following parameters apply to perflevel N, where N is a number between 0 and the number of core types in the system minus one.
+ *   perflevel 0 always refers to the highest performance core type in the system.
+ *
+ *   hw.perflevelN.physicalcpu      - The number of physical processors available in the current power management mode.
+ *   hw.perflevelN.physicalcpumax   - The maximum number of physical processors that could be available this boot.
+ *   hw.perflevelN.logicalcpu       - The number of logical processors available in the current power management mode.
+ *   hw.perflevelN.logicalcpumax    - The maximum number of logical processors that could be available this boot.
+ *
+ *   hw.perflevelN.l1dcachesize     - These values provide the size in bytes of the L1, L2 and L3 caches.  If a cache is not present
+ *   hw.perflevelN.l1icachesize     - then the selector will return and error.
+ *   hw.perflevelN.l2cachesize      -
+ *   hw.perflevelN.l3cachesize      -
+ *
+ *   hw.perflevelN.cpusperl2        - These values provide the number of CPUs of the same type that share L2 and L3 caches.
+ *   hw.perflevelN.cpusperl3        - If a cache is not present then the selector will return and error.
+ *
+ *   hw.perflevelN.l2perflevels     - These values provide a bitmap, where bit  number of CPUs of the same type that share L2 and L3 caches.
+ *   hw.perflevelN.l3perflevels     - If a cache is not present then the selector will return and error.
  *
  *   hw.packages               - Gives the number of processor packages.
  *

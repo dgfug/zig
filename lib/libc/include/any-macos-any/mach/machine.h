@@ -121,6 +121,7 @@ typedef integer_t       cpu_threadtype_t;
 /* skip				((cpu_type_t) 20 */
 /* skip				((cpu_type_t) 21 */
 /* skip				((cpu_type_t) 22 */
+/* skip				((cpu_type_t) 23 */
 
 /*
  *	Machine subtypes (these are defined here, instead of in a machine
@@ -393,13 +394,18 @@ typedef integer_t       cpu_threadtype_t;
 #define CPUFAMILY_ARM_VORTEX_TEMPEST    0x07d34b9f
 #define CPUFAMILY_ARM_LIGHTNING_THUNDER 0x462504d2
 #define CPUFAMILY_ARM_FIRESTORM_ICESTORM 0x1b588bb3
+#define CPUFAMILY_ARM_BLIZZARD_AVALANCHE 0xda33d83d
+#define CPUFAMILY_ARM_EVEREST_SAWTOOTH  0x8765edea
+#define CPUFAMILY_ARM_COLL 0x2876f5b5
 
+/* Described in rdar://64125549 */
 #define CPUSUBFAMILY_UNKNOWN            0
 #define CPUSUBFAMILY_ARM_HP             1
 #define CPUSUBFAMILY_ARM_HG             2
 #define CPUSUBFAMILY_ARM_M              3
 #define CPUSUBFAMILY_ARM_HS             4
 #define CPUSUBFAMILY_ARM_HC_HD          5
+#define CPUSUBFAMILY_ARM_HA             6
 
 /* The following synonyms are deprecated: */
 #define CPUFAMILY_INTEL_6_23    CPUFAMILY_INTEL_PENRYN

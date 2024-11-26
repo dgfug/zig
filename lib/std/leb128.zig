@@ -3,22 +3,22 @@ const testing = std.testing;
 
 /// Read a single unsigned LEB128 value from the given reader as type T,
 /// or error.Overflow if the value cannot fit.
-pub fn readULEB128(comptime T: type, reader: anytype) !T {
-    const U = if (@typeInfo(T).Int.bits < 8) u8 else T;
+pub fn readUleb128(comptime T: type, reader: anytype) !T {
+    const U = if (@typeInfo(T).int.bits < 8) u8 else T;
     const ShiftT = std.math.Log2Int(U);
 
-    const max_group = (@typeInfo(U).Int.bits + 6) / 7;
+    const max_group = (@typeInfo(U).int.bits + 6) / 7;
 
-    var value = @as(U, 0);
-    var group = @as(ShiftT, 0);
+    var value: U = 0;
+    var group: ShiftT = 0;
 
     while (group < max_group) : (group += 1) {
         const byte = try reader.readByte();
-        var temp = @as(U, byte & 0x7f);
 
-        if (@shlWithOverflow(U, temp, group * 7, &temp)) return error.Overflow;
+        const ov = @shlWithOverflow(@as(U, byte & 0x7f), group * 7);
+        if (ov[1] != 0) return error.Overflow;
 
-        value |= temp;
+        value |= ov[0];
         if (byte & 0x80 == 0) break;
     } else {
         return error.Overflow;
@@ -29,17 +29,24 @@ pub fn readULEB128(comptime T: type, reader: anytype) !T {
         if (value > std.math.maxInt(T)) return error.Overflow;
     }
 
-    return @truncate(T, value);
+    return @as(T, @truncate(value));
 }
 
+/// Deprecated: use `readUleb128`
+pub const readULEB128 = readUleb128;
+
 /// Write a single unsigned integer as unsigned LEB128 to the given writer.
-pub fn writeULEB128(writer: anytype, uint_value: anytype) !void {
-    const T = @TypeOf(uint_value);
-    const U = if (@typeInfo(T).Int.bits < 8) u8 else T;
-    var value = @intCast(U, uint_value);
+pub fn writeUleb128(writer: anytype, arg: anytype) !void {
+    const Arg = @TypeOf(arg);
+    const Int = switch (Arg) {
+        comptime_int => std.math.IntFittingRange(arg, arg),
+        else => Arg,
+    };
+    const Value = if (@typeInfo(Int).int.bits < 8) u8 else Int;
+    var value: Value = arg;
 
     while (true) {
-        const byte = @truncate(u8, value & 0x7f);
+        const byte: u8 = @truncate(value & 0x7f);
         value >>= 7;
         if (value == 0) {
             try writer.writeByte(byte);
@@ -50,48 +57,51 @@ pub fn writeULEB128(writer: anytype, uint_value: anytype) !void {
     }
 }
 
+/// Deprecated: use `writeUleb128`
+pub const writeULEB128 = writeUleb128;
+
 /// Read a single signed LEB128 value from the given reader as type T,
 /// or error.Overflow if the value cannot fit.
-pub fn readILEB128(comptime T: type, reader: anytype) !T {
-    const S = if (@typeInfo(T).Int.bits < 8) i8 else T;
-    const U = std.meta.Int(.unsigned, @typeInfo(S).Int.bits);
+pub fn readIleb128(comptime T: type, reader: anytype) !T {
+    const S = if (@typeInfo(T).int.bits < 8) i8 else T;
+    const U = std.meta.Int(.unsigned, @typeInfo(S).int.bits);
     const ShiftU = std.math.Log2Int(U);
 
-    const max_group = (@typeInfo(U).Int.bits + 6) / 7;
+    const max_group = (@typeInfo(U).int.bits + 6) / 7;
 
     var value = @as(U, 0);
     var group = @as(ShiftU, 0);
 
     while (group < max_group) : (group += 1) {
         const byte = try reader.readByte();
-        var temp = @as(U, byte & 0x7f);
 
         const shift = group * 7;
-        if (@shlWithOverflow(U, temp, shift, &temp)) {
+        const ov = @shlWithOverflow(@as(U, byte & 0x7f), shift);
+        if (ov[1] != 0) {
             // Overflow is ok so long as the sign bit is set and this is the last byte
             if (byte & 0x80 != 0) return error.Overflow;
-            if (@bitCast(S, temp) >= 0) return error.Overflow;
+            if (@as(S, @bitCast(ov[0])) >= 0) return error.Overflow;
 
             // and all the overflowed bits are 1
-            const remaining_shift = @intCast(u3, @typeInfo(U).Int.bits - @as(u16, shift));
-            const remaining_bits = @bitCast(i8, byte | 0x80) >> remaining_shift;
+            const remaining_shift = @as(u3, @intCast(@typeInfo(U).int.bits - @as(u16, shift)));
+            const remaining_bits = @as(i8, @bitCast(byte | 0x80)) >> remaining_shift;
             if (remaining_bits != -1) return error.Overflow;
         } else {
             // If we don't overflow and this is the last byte and the number being decoded
             // is negative, check that the remaining bits are 1
-            if ((byte & 0x80 == 0) and (@bitCast(S, temp) < 0)) {
-                const remaining_shift = @intCast(u3, @typeInfo(U).Int.bits - @as(u16, shift));
-                const remaining_bits = @bitCast(i8, byte | 0x80) >> remaining_shift;
+            if ((byte & 0x80 == 0) and (@as(S, @bitCast(ov[0])) < 0)) {
+                const remaining_shift = @as(u3, @intCast(@typeInfo(U).int.bits - @as(u16, shift)));
+                const remaining_bits = @as(i8, @bitCast(byte | 0x80)) >> remaining_shift;
                 if (remaining_bits != -1) return error.Overflow;
             }
         }
 
-        value |= temp;
+        value |= ov[0];
         if (byte & 0x80 == 0) {
             const needs_sign_ext = group + 1 < max_group;
             if (byte & 0x40 != 0 and needs_sign_ext) {
                 const ones = @as(S, -1);
-                value |= @bitCast(U, ones) << (shift + 7);
+                value |= @as(U, @bitCast(ones)) << (shift + 7);
             }
             break;
         }
@@ -99,26 +109,32 @@ pub fn readILEB128(comptime T: type, reader: anytype) !T {
         return error.Overflow;
     }
 
-    const result = @bitCast(S, value);
+    const result = @as(S, @bitCast(value));
     // Only applies if we extended to i8
     if (S != T) {
         if (result > std.math.maxInt(T) or result < std.math.minInt(T)) return error.Overflow;
     }
 
-    return @truncate(T, result);
+    return @as(T, @truncate(result));
 }
 
-/// Write a single signed integer as signed LEB128 to the given writer.
-pub fn writeILEB128(writer: anytype, int_value: anytype) !void {
-    const T = @TypeOf(int_value);
-    const S = if (@typeInfo(T).Int.bits < 8) i8 else T;
-    const U = std.meta.Int(.unsigned, @typeInfo(S).Int.bits);
+/// Deprecated: use `readIleb128`
+pub const readILEB128 = readIleb128;
 
-    var value = @intCast(S, int_value);
+/// Write a single signed integer as signed LEB128 to the given writer.
+pub fn writeIleb128(writer: anytype, arg: anytype) !void {
+    const Arg = @TypeOf(arg);
+    const Int = switch (Arg) {
+        comptime_int => std.math.IntFittingRange(-@abs(arg), @abs(arg)),
+        else => Arg,
+    };
+    const Signed = if (@typeInfo(Int).int.bits < 8) i8 else Int;
+    const Unsigned = std.meta.Int(.unsigned, @typeInfo(Signed).int.bits);
+    var value: Signed = arg;
 
     while (true) {
-        const uvalue = @bitCast(U, value);
-        const byte = @truncate(u8, uvalue);
+        const unsigned: Unsigned = @bitCast(value);
+        const byte: u8 = @truncate(unsigned);
         value >>= 6;
         if (value == -1 or value == 0) {
             try writer.writeByte(byte & 0x7F);
@@ -138,20 +154,31 @@ pub fn writeILEB128(writer: anytype, int_value: anytype) !void {
 /// "relocatable", meaning that it becomes possible to later go back and patch the number to be a
 /// different value without shifting all the following code.
 pub fn writeUnsignedFixed(comptime l: usize, ptr: *[l]u8, int: std.meta.Int(.unsigned, l * 7)) void {
-    const T = @TypeOf(int);
-    const U = if (@typeInfo(T).Int.bits < 8) u8 else T;
-    var value = @intCast(U, int);
-
-    comptime var i = 0;
-    inline while (i < (l - 1)) : (i += 1) {
-        const byte = @truncate(u8, value) | 0b1000_0000;
-        value >>= 7;
-        ptr[i] = byte;
-    }
-    ptr[i] = @truncate(u8, value);
+    writeUnsignedExtended(ptr, int);
 }
 
-test "writeUnsignedFixed" {
+/// Same as `writeUnsignedFixed` but with a runtime-known length.
+/// Asserts `slice.len > 0`.
+pub fn writeUnsignedExtended(slice: []u8, arg: anytype) void {
+    const Arg = @TypeOf(arg);
+    const Int = switch (Arg) {
+        comptime_int => std.math.IntFittingRange(arg, arg),
+        else => Arg,
+    };
+    const Value = if (@typeInfo(Int).int.bits < 8) u8 else Int;
+    var value: Value = arg;
+
+    for (slice[0 .. slice.len - 1]) |*byte| {
+        byte.* = @truncate(0x80 | value);
+        value >>= 7;
+    }
+    slice[slice.len - 1] = @as(u7, @intCast(value));
+}
+
+/// Deprecated: use `writeIleb128`
+pub const writeILEB128 = writeIleb128;
+
+test writeUnsignedFixed {
     {
         var buf: [4]u8 = undefined;
         writeUnsignedFixed(4, &buf, 0);
@@ -174,26 +201,85 @@ test "writeUnsignedFixed" {
     }
 }
 
+/// This is an "advanced" function. It allows one to use a fixed amount of memory to store an
+/// ILEB128. This defeats the entire purpose of using this data encoding; it will no longer use
+/// fewer bytes to store smaller numbers. The advantage of using a fixed width is that it makes
+/// fields have a predictable size and so depending on the use case this tradeoff can be worthwhile.
+/// An example use case of this is in emitting DWARF info where one wants to make a ILEB128 field
+/// "relocatable", meaning that it becomes possible to later go back and patch the number to be a
+/// different value without shifting all the following code.
+pub fn writeSignedFixed(comptime l: usize, ptr: *[l]u8, int: std.meta.Int(.signed, l * 7)) void {
+    const T = @TypeOf(int);
+    const U = if (@typeInfo(T).int.bits < 8) u8 else T;
+    var value: U = @intCast(int);
+
+    comptime var i = 0;
+    inline while (i < (l - 1)) : (i += 1) {
+        const byte: u8 = @bitCast(@as(i8, @truncate(value)) | -0b1000_0000);
+        value >>= 7;
+        ptr[i] = byte;
+    }
+    ptr[i] = @as(u7, @bitCast(@as(i7, @truncate(value))));
+}
+
+test writeSignedFixed {
+    {
+        var buf: [4]u8 = undefined;
+        writeSignedFixed(4, &buf, 0);
+        try testing.expect((try test_read_ileb128(i64, &buf)) == 0);
+    }
+    {
+        var buf: [4]u8 = undefined;
+        writeSignedFixed(4, &buf, 1);
+        try testing.expect((try test_read_ileb128(i64, &buf)) == 1);
+    }
+    {
+        var buf: [4]u8 = undefined;
+        writeSignedFixed(4, &buf, -1);
+        try testing.expect((try test_read_ileb128(i64, &buf)) == -1);
+    }
+    {
+        var buf: [4]u8 = undefined;
+        writeSignedFixed(4, &buf, 1000);
+        try testing.expect((try test_read_ileb128(i64, &buf)) == 1000);
+    }
+    {
+        var buf: [4]u8 = undefined;
+        writeSignedFixed(4, &buf, -1000);
+        try testing.expect((try test_read_ileb128(i64, &buf)) == -1000);
+    }
+    {
+        var buf: [4]u8 = undefined;
+        writeSignedFixed(4, &buf, -10000000);
+        try testing.expect((try test_read_ileb128(i64, &buf)) == -10000000);
+    }
+    {
+        var buf: [4]u8 = undefined;
+        writeSignedFixed(4, &buf, 10000000);
+        try testing.expect((try test_read_ileb128(i64, &buf)) == 10000000);
+    }
+}
+
 // tests
 fn test_read_stream_ileb128(comptime T: type, encoded: []const u8) !T {
     var reader = std.io.fixedBufferStream(encoded);
-    return try readILEB128(T, reader.reader());
+    return try readIleb128(T, reader.reader());
 }
 
 fn test_read_stream_uleb128(comptime T: type, encoded: []const u8) !T {
     var reader = std.io.fixedBufferStream(encoded);
-    return try readULEB128(T, reader.reader());
+    return try readUleb128(T, reader.reader());
 }
 
 fn test_read_ileb128(comptime T: type, encoded: []const u8) !T {
     var reader = std.io.fixedBufferStream(encoded);
-    const v1 = try readILEB128(T, reader.reader());
+    const v1 = try readIleb128(T, reader.reader());
     return v1;
 }
 
 fn test_read_uleb128(comptime T: type, encoded: []const u8) !T {
     var reader = std.io.fixedBufferStream(encoded);
-    const v1 = try readULEB128(T, reader.reader());
+    const v1 = try readUleb128(T, reader.reader());
     return v1;
 }
 
@@ -201,7 +287,7 @@ fn test_read_ileb128_seq(comptime T: type, comptime N: usize, encoded: []const u
     var reader = std.io.fixedBufferStream(encoded);
     var i: usize = 0;
     while (i < N) : (i += 1) {
-        _ = try readILEB128(T, reader.reader());
+        _ = try readIleb128(T, reader.reader());
     }
 }
 
@@ -209,7 +295,7 @@ fn test_read_uleb128_seq(comptime T: type, comptime N: usize, encoded: []const u
     var reader = std.io.fixedBufferStream(encoded);
     var i: usize = 0;
     while (i < N) : (i += 1) {
-        _ = try readULEB128(T, reader.reader());
+        _ = try readUleb128(T, reader.reader());
     }
 }
 
@@ -244,7 +330,7 @@ test "deserialize signed LEB128" {
     try testing.expect((try test_read_ileb128(i16, "\xff\xff\x7f")) == -1);
     try testing.expect((try test_read_ileb128(i32, "\xff\xff\xff\xff\x7f")) == -1);
     try testing.expect((try test_read_ileb128(i32, "\x80\x80\x80\x80\x78")) == -0x80000000);
-    try testing.expect((try test_read_ileb128(i64, "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x7f")) == @bitCast(i64, @intCast(u64, 0x8000000000000000)));
+    try testing.expect((try test_read_ileb128(i64, "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x7f")) == @as(i64, @bitCast(@as(u64, @intCast(0x8000000000000000)))));
     try testing.expect((try test_read_ileb128(i64, "\x80\x80\x80\x80\x80\x80\x80\x80\x40")) == -0x4000000000000000);
     try testing.expect((try test_read_ileb128(i64, "\x80\x80\x80\x80\x80\x80\x80\x80\x80\x7f")) == -0x8000000000000000);
 
@@ -302,27 +388,27 @@ test "deserialize unsigned LEB128" {
 
 fn test_write_leb128(value: anytype) !void {
     const T = @TypeOf(value);
-    const signedness = @typeInfo(T).Int.signedness;
+    const signedness = @typeInfo(T).int.signedness;
     const t_signed = signedness == .signed;
 
-    const writeStream = if (t_signed) writeILEB128 else writeULEB128;
-    const readStream = if (t_signed) readILEB128 else readULEB128;
+    const writeStream = if (t_signed) writeIleb128 else writeUleb128;
+    const readStream = if (t_signed) readIleb128 else readUleb128;
 
     // decode to a larger bit size too, to ensure sign extension
     // is working as expected
-    const larger_type_bits = ((@typeInfo(T).Int.bits + 8) / 8) * 8;
+    const larger_type_bits = ((@typeInfo(T).int.bits + 8) / 8) * 8;
     const B = std.meta.Int(signedness, larger_type_bits);
 
     const bytes_needed = bn: {
-        if (@typeInfo(T).Int.bits <= 7) break :bn @as(u16, 1);
+        if (@typeInfo(T).int.bits <= 7) break :bn @as(u16, 1);
 
-        const unused_bits = if (value < 0) @clz(T, ~value) else @clz(T, value);
-        const used_bits: u16 = (@typeInfo(T).Int.bits - unused_bits) + @boolToInt(t_signed);
+        const unused_bits = if (value < 0) @clz(~value) else @clz(value);
+        const used_bits: u16 = (@typeInfo(T).int.bits - unused_bits) + @intFromBool(t_signed);
         if (used_bits <= 7) break :bn @as(u16, 1);
         break :bn ((used_bits + 6) / 7);
     };
 
-    const max_groups = if (@typeInfo(T).Int.bits == 0) 1 else (@typeInfo(T).Int.bits + 6) / 7;
+    const max_groups = if (@typeInfo(T).int.bits == 0) 1 else (@typeInfo(T).int.bits + 6) / 7;
 
     var buf: [max_groups]u8 = undefined;
     var fbs = std.io.fixedBufferStream(&buf);
@@ -353,9 +439,9 @@ test "serialize unsigned LEB128" {
         const T = std.meta.Int(.unsigned, t);
         const min = std.math.minInt(T);
         const max = std.math.maxInt(T);
-        var i = @as(std.meta.Int(.unsigned, @typeInfo(T).Int.bits + 1), min);
+        var i = @as(std.meta.Int(.unsigned, @typeInfo(T).int.bits + 1), min);
 
-        while (i <= max) : (i += 1) try test_write_leb128(@intCast(T, i));
+        while (i <= max) : (i += 1) try test_write_leb128(@as(T, @intCast(i)));
     }
 }
 
@@ -371,8 +457,8 @@ test "serialize signed LEB128" {
         const T = std.meta.Int(.signed, t);
         const min = std.math.minInt(T);
         const max = std.math.maxInt(T);
-        var i = @as(std.meta.Int(.signed, @typeInfo(T).Int.bits + 1), min);
+        var i = @as(std.meta.Int(.signed, @typeInfo(T).int.bits + 1), min);
 
-        while (i <= max) : (i += 1) try test_write_leb128(@intCast(T, i));
+        while (i <= max) : (i += 1) try test_write_leb128(@as(T, @intCast(i)));
     }
 }

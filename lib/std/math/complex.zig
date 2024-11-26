@@ -34,9 +34,6 @@ pub fn Complex(comptime T: type) type {
         /// Imaginary part.
         im: T,
 
-        /// Deprecated, use init()
-        pub const new = init;
-
         /// Create a new Complex number from the given real and imaginary parts.
         pub fn init(re: T, im: T) Self {
             return Self{
@@ -89,6 +86,22 @@ pub fn Complex(comptime T: type) type {
             };
         }
 
+        /// Returns the negation of a complex number.
+        pub fn neg(self: Self) Self {
+            return Self{
+                .re = -self.re,
+                .im = -self.im,
+            };
+        }
+
+        /// Returns the product of complex number and i=sqrt(-1)
+        pub fn mulbyi(self: Self) Self {
+            return Self{
+                .re = -self.im,
+                .im = self.re,
+            };
+        }
+
         /// Returns the reciprocal of a complex number.
         pub fn reciprocal(self: Self) Self {
             const m = self.re * self.re + self.im * self.im;
@@ -100,14 +113,14 @@ pub fn Complex(comptime T: type) type {
 
         /// Returns the magnitude of a complex number.
         pub fn magnitude(self: Self) T {
-            return math.sqrt(self.re * self.re + self.im * self.im);
+            return @sqrt(self.re * self.re + self.im * self.im);
         }
     };
 }
 
 const epsilon = 0.0001;
 
-test "complex.add" {
+test "add" {
     const a = Complex(f32).init(5, 3);
     const b = Complex(f32).init(2, 7);
     const c = a.add(b);
@@ -115,7 +128,7 @@ test "complex.add" {
     try testing.expect(c.re == 7 and c.im == 10);
 }
 
-test "complex.sub" {
+test "sub" {
     const a = Complex(f32).init(5, 3);
     const b = Complex(f32).init(2, 7);
     const c = a.sub(b);
@@ -123,7 +136,7 @@ test "complex.sub" {
     try testing.expect(c.re == 3 and c.im == -4);
 }
 
-test "complex.mul" {
+test "mul" {
     const a = Complex(f32).init(5, 3);
     const b = Complex(f32).init(2, 7);
     const c = a.mul(b);
@@ -131,7 +144,7 @@ test "complex.mul" {
     try testing.expect(c.re == -11 and c.im == 41);
 }
 
-test "complex.div" {
+test "div" {
     const a = Complex(f32).init(5, 3);
     const b = Complex(f32).init(2, 7);
     const c = a.div(b);
@@ -140,14 +153,28 @@ test "complex.div" {
         math.approxEqAbs(f32, c.im, @as(f32, -29) / 53, epsilon));
 }
 
-test "complex.conjugate" {
+test "conjugate" {
     const a = Complex(f32).init(5, 3);
     const c = a.conjugate();
 
     try testing.expect(c.re == 5 and c.im == -3);
 }
 
-test "complex.reciprocal" {
+test "neg" {
+    const a = Complex(f32).init(5, 3);
+    const c = a.neg();
+
+    try testing.expect(c.re == -5 and c.im == -3);
+}
+
+test "mulbyi" {
+    const a = Complex(f32).init(5, 3);
+    const c = a.mulbyi();
+
+    try testing.expect(c.re == -3 and c.im == 5);
+}
+
+test "reciprocal" {
     const a = Complex(f32).init(5, 3);
     const c = a.reciprocal();
 
@@ -155,14 +182,14 @@ test "complex.reciprocal" {
         math.approxEqAbs(f32, c.im, @as(f32, -3) / 34, epsilon));
 }
 
-test "complex.magnitude" {
+test "magnitude" {
     const a = Complex(f32).init(5, 3);
     const c = a.magnitude();
 
     try testing.expect(math.approxEqAbs(f32, c, 5.83095, epsilon));
 }
 
-test "complex.cmath" {
+test {
     _ = @import("complex/abs.zig");
     _ = @import("complex/acosh.zig");
     _ = @import("complex/acos.zig");

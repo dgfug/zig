@@ -21,7 +21,7 @@ pub const ExecHdr = extern struct {
         var buf: [40]u8 = undefined;
         var i: u8 = 0;
         inline for (std.meta.fields(@This())) |f| {
-            std.mem.writeIntSliceBig(u32, buf[i .. i + 4], @field(self, f.name));
+            std.mem.writeInt(u32, buf[i..][0..4], @field(self, f.name), .big);
             i += 4;
         }
         return buf;
@@ -109,8 +109,8 @@ pub const R_MAGIC = _MAGIC(HDR_MAGIC, 28); // arm64
 
 pub fn magicFromArch(arch: std.Target.Cpu.Arch) !u32 {
     return switch (arch) {
-        .i386 => I_MAGIC,
-        .sparc => K_MAGIC, // TODO should sparcv9 and sparcel go here?
+        .x86 => I_MAGIC,
+        .sparc => K_MAGIC, // TODO should sparc64 go here?
         .mips => V_MAGIC,
         .arm => E_MAGIC,
         .aarch64 => R_MAGIC,
@@ -124,7 +124,7 @@ pub fn magicFromArch(arch: std.Target.Cpu.Arch) !u32 {
 /// gets the quantization of pc for the arch
 pub fn getPCQuant(arch: std.Target.Cpu.Arch) !u8 {
     return switch (arch) {
-        .i386, .x86_64 => 1,
+        .x86, .x86_64 => 1,
         .powerpc, .powerpc64, .mips, .sparc, .arm, .aarch64 => 4,
         else => error.ArchNotSupportedByPlan9,
     };

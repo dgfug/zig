@@ -7,40 +7,96 @@ pub fn doClientRequest(default: usize, request: usize, a1: usize, a2: usize, a3:
         return default;
     }
 
-    switch (builtin.target.cpu.arch) {
-        .i386 => {
-            return asm volatile (
-                \\ roll $3,  %%edi ; roll $13, %%edi
-                \\ roll $29, %%edi ; roll $19, %%edi
-                \\ xchgl %%ebx,%%ebx
-                : [_] "={edx}" (-> usize),
-                : [_] "{eax}" (&[_]usize{ request, a1, a2, a3, a4, a5 }),
-                  [_] "0" (default),
-                : "cc", "memory"
-            );
-        },
-        .x86_64 => {
-            return asm volatile (
-                \\ rolq $3,  %%rdi ; rolq $13, %%rdi
-                \\ rolq $61, %%rdi ; rolq $51, %%rdi
-                \\ xchgq %%rbx,%%rbx
-                : [_] "={rdx}" (-> usize),
-                : [_] "{rax}" (&[_]usize{ request, a1, a2, a3, a4, a5 }),
-                  [_] "0" (default),
-                : "cc", "memory"
-            );
-        },
-        // ppc32
-        // ppc64
-        // arm
-        // arm64
-        // s390x
-        // mips32
-        // mips64
-        else => {
-            return default;
-        },
-    }
+    const args = &[_]usize{ request, a1, a2, a3, a4, a5 };
+
+    return switch (builtin.cpu.arch) {
+        .arm, .armeb, .thumb, .thumbeb => asm volatile (
+            \\ mov r12, r12, ror #3  ; mov r12, r12, ror #13
+            \\ mov r12, r12, ror #29 ; mov r12, r12, ror #19
+            \\ orr r10, r10, r10
+            : [_] "={r3}" (-> usize),
+            : [_] "{r4}" (args),
+              [_] "{r3}" (default),
+            : "cc", "memory"
+        ),
+        .aarch64, .aarch64_be => asm volatile (
+            \\ ror x12, x12, #3  ; ror x12, x12, #13
+            \\ ror x12, x12, #51 ; ror x12, x12, #61
+            \\ orr x10, x10, x10
+            : [_] "={x3}" (-> usize),
+            : [_] "{x4}" (args),
+              [_] "{x3}" (default),
+            : "cc", "memory"
+        ),
+        .mips, .mipsel => asm volatile (
+            \\ srl $0,  $0,  13
+            \\ srl $0,  $0,  29
+            \\ srl $0,  $0,  3
+            \\ srl $0,  $0,  19
+            \\ or  $13, $13, $13
+            : [_] "={$11}" (-> usize),
+            : [_] "{$12}" (args),
+              [_] "{$11}" (default),
+            : "memory"
+        ),
+        .mips64, .mips64el => asm volatile (
+            \\ dsll $0,  $0,  3   ; dsll $0, $0, 13
+            \\ dsll $0,  $0,  29  ; dsll $0, $0, 19
+            \\ or   $13, $13, $13
+            : [_] "={$11}" (-> usize),
+            : [_] "{$12}" (args),
+              [_] "{$11}" (default),
+            : "memory"
+        ),
+        .powerpc, .powerpcle => asm volatile (
+            \\ rlwinm 0, 0, 3,  0, 31 ; rlwinm 0, 0, 13, 0, 31
+            \\ rlwinm 0, 0, 29, 0, 31 ; rlwinm 0, 0, 19, 0, 31
+            \\ or     1, 1, 1
+            : [_] "={r3}" (-> usize),
+            : [_] "{r4}" (args),
+              [_] "{r3}" (default),
+            : "cc", "memory"
+        ),
+        .powerpc64, .powerpc64le => asm volatile (
+            \\ rotldi 0, 0, 3  ; rotldi 0, 0, 13
+            \\ rotldi 0, 0, 61 ; rotldi 0, 0, 51
+            \\ or     1, 1, 1
+            : [_] "={r3}" (-> usize),
+            : [_] "{r4}" (args),
+              [_] "{r3}" (default),
+            : "cc", "memory"
+        ),
+        .s390x => asm volatile (
+            \\ lr %%r15, %%r15
+            \\ lr %%r1,  %%r1
+            \\ lr %%r2,  %%r2
+            \\ lr %%r3,  %%r3
+            \\ lr %%r2,  %%r2
+            : [_] "={r3}" (-> usize),
+            : [_] "{r2}" (args),
+              [_] "{r3}" (default),
+            : "cc", "memory"
+        ),
+        .x86 => asm volatile (
+            \\ roll  $3,    %%edi ; roll $13, %%edi
+            \\ roll  $29,   %%edi ; roll $19, %%edi
+            \\ xchgl %%ebx, %%ebx
+            : [_] "={edx}" (-> usize),
+            : [_] "{eax}" (args),
+              [_] "{edx}" (default),
+            : "cc", "memory"
+        ),
+        .x86_64 => asm volatile (
+            \\ rolq  $3,    %%rdi ; rolq $13, %%rdi
+            \\ rolq  $61,   %%rdi ; rolq $51, %%rdi
+            \\ xchgq %%rbx, %%rbx
+            : [_] "={rdx}" (-> usize),
+            : [_] "{rax}" (args),
+              [_] "{rdx}" (default),
+            : "cc", "memory"
+        ),
+        else => default,
+    };
 }
 
 pub const ClientRequest = enum(u32) {
@@ -84,7 +140,7 @@ pub fn IsTool(base: [2]u8, code: usize) bool {
 }
 
 fn doClientRequestExpr(default: usize, request: ClientRequest, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize) usize {
-    return doClientRequest(default, @intCast(usize, @enumToInt(request)), a1, a2, a3, a4, a5);
+    return doClientRequest(default, @as(usize, @intCast(@intFromEnum(request))), a1, a2, a3, a4, a5);
 }
 
 fn doClientRequestStmt(request: ClientRequest, a1: usize, a2: usize, a3: usize, a4: usize, a5: usize) void {
@@ -107,28 +163,40 @@ test "works whether running on valgrind or not" {
 /// a JITter or some such, since it provides a way to make sure valgrind will
 /// retranslate the invalidated area.  Returns no value.
 pub fn discardTranslations(qzz: []const u8) void {
-    doClientRequestStmt(.DiscardTranslations, @ptrToInt(qzz.ptr), qzz.len, 0, 0, 0);
+    doClientRequestStmt(.DiscardTranslations, @intFromPtr(qzz.ptr), qzz.len, 0, 0, 0);
 }
 
 pub fn innerThreads(qzz: [*]u8) void {
-    doClientRequestStmt(.InnerThreads, qzz, 0, 0, 0, 0);
+    doClientRequestStmt(.InnerThreads, @intFromPtr(qzz), 0, 0, 0, 0);
 }
 
-pub fn nonSIMDCall0(func: fn (usize) usize) usize {
-    return doClientRequestExpr(0, .ClientCall0, @ptrToInt(func), 0, 0, 0, 0);
+pub fn nonSimdCall0(func: fn (usize) usize) usize {
+    return doClientRequestExpr(0, .ClientCall0, @intFromPtr(func), 0, 0, 0, 0);
 }
 
-pub fn nonSIMDCall1(func: fn (usize, usize) usize, a1: usize) usize {
-    return doClientRequestExpr(0, .ClientCall1, @ptrToInt(func), a1, 0, 0, 0);
+pub fn nonSimdCall1(func: fn (usize, usize) usize, a1: usize) usize {
+    return doClientRequestExpr(0, .ClientCall1, @intFromPtr(func), a1, 0, 0, 0);
 }
 
-pub fn nonSIMDCall2(func: fn (usize, usize, usize) usize, a1: usize, a2: usize) usize {
-    return doClientRequestExpr(0, .ClientCall2, @ptrToInt(func), a1, a2, 0, 0);
+pub fn nonSimdCall2(func: fn (usize, usize, usize) usize, a1: usize, a2: usize) usize {
+    return doClientRequestExpr(0, .ClientCall2, @intFromPtr(func), a1, a2, 0, 0);
 }
 
-pub fn nonSIMDCall3(func: fn (usize, usize, usize, usize) usize, a1: usize, a2: usize, a3: usize) usize {
-    return doClientRequestExpr(0, .ClientCall3, @ptrToInt(func), a1, a2, a3, 0);
+pub fn nonSimdCall3(func: fn (usize, usize, usize, usize) usize, a1: usize, a2: usize, a3: usize) usize {
+    return doClientRequestExpr(0, .ClientCall3, @intFromPtr(func), a1, a2, a3, 0);
 }
+
+/// Deprecated: use `nonSimdCall0`
+pub const nonSIMDCall0 = nonSimdCall0;
+
+/// Deprecated: use `nonSimdCall1`
+pub const nonSIMDCall1 = nonSimdCall1;
+
+/// Deprecated: use `nonSimdCall2`
+pub const nonSIMDCall2 = nonSimdCall2;
+
+/// Deprecated: use `nonSimdCall3`
+pub const nonSIMDCall3 = nonSimdCall3;
 
 /// Counts the number of errors that have been recorded by a tool.  Nb:
 /// the tool must record the errors with VG_(maybe_record_error)() or
@@ -139,15 +207,15 @@ pub fn countErrors() usize {
 }
 
 pub fn mallocLikeBlock(mem: []u8, rzB: usize, is_zeroed: bool) void {
-    doClientRequestStmt(.MalloclikeBlock, @ptrToInt(mem.ptr), mem.len, rzB, @boolToInt(is_zeroed), 0);
+    doClientRequestStmt(.MalloclikeBlock, @intFromPtr(mem.ptr), mem.len, rzB, @intFromBool(is_zeroed), 0);
 }
 
 pub fn resizeInPlaceBlock(oldmem: []u8, newsize: usize, rzB: usize) void {
-    doClientRequestStmt(.ResizeinplaceBlock, @ptrToInt(oldmem.ptr), oldmem.len, newsize, rzB, 0);
+    doClientRequestStmt(.ResizeinplaceBlock, @intFromPtr(oldmem.ptr), oldmem.len, newsize, rzB, 0);
 }
 
 pub fn freeLikeBlock(addr: [*]u8, rzB: usize) void {
-    doClientRequestStmt(.FreelikeBlock, @ptrToInt(addr), rzB, 0, 0, 0);
+    doClientRequestStmt(.FreelikeBlock, @intFromPtr(addr), rzB, 0, 0, 0);
 }
 
 /// Create a memory pool.
@@ -156,49 +224,49 @@ pub const MempoolFlags = struct {
     pub const MetaPool = 2;
 };
 pub fn createMempool(pool: [*]u8, rzB: usize, is_zeroed: bool, flags: usize) void {
-    doClientRequestStmt(.CreateMempool, @ptrToInt(pool), rzB, @boolToInt(is_zeroed), flags, 0);
+    doClientRequestStmt(.CreateMempool, @intFromPtr(pool), rzB, @intFromBool(is_zeroed), flags, 0);
 }
 
 /// Destroy a memory pool.
 pub fn destroyMempool(pool: [*]u8) void {
-    doClientRequestStmt(.DestroyMempool, pool, 0, 0, 0, 0);
+    doClientRequestStmt(.DestroyMempool, @intFromPtr(pool), 0, 0, 0, 0);
 }
 
 /// Associate a piece of memory with a memory pool.
 pub fn mempoolAlloc(pool: [*]u8, mem: []u8) void {
-    doClientRequestStmt(.MempoolAlloc, @ptrToInt(pool), @ptrToInt(mem.ptr), mem.len, 0, 0);
+    doClientRequestStmt(.MempoolAlloc, @intFromPtr(pool), @intFromPtr(mem.ptr), mem.len, 0, 0);
 }
 
 /// Disassociate a piece of memory from a memory pool.
 pub fn mempoolFree(pool: [*]u8, addr: [*]u8) void {
-    doClientRequestStmt(.MempoolFree, @ptrToInt(pool), @ptrToInt(addr), 0, 0, 0);
+    doClientRequestStmt(.MempoolFree, @intFromPtr(pool), @intFromPtr(addr), 0, 0, 0);
 }
 
 /// Disassociate any pieces outside a particular range.
 pub fn mempoolTrim(pool: [*]u8, mem: []u8) void {
-    doClientRequestStmt(.MempoolTrim, @ptrToInt(pool), @ptrToInt(mem.ptr), mem.len, 0, 0);
+    doClientRequestStmt(.MempoolTrim, @intFromPtr(pool), @intFromPtr(mem.ptr), mem.len, 0, 0);
 }
 
 /// Resize and/or move a piece associated with a memory pool.
 pub fn moveMempool(poolA: [*]u8, poolB: [*]u8) void {
-    doClientRequestStmt(.MoveMempool, @ptrToInt(poolA), @ptrToInt(poolB), 0, 0, 0);
+    doClientRequestStmt(.MoveMempool, @intFromPtr(poolA), @intFromPtr(poolB), 0, 0, 0);
 }
 
 /// Resize and/or move a piece associated with a memory pool.
 pub fn mempoolChange(pool: [*]u8, addrA: [*]u8, mem: []u8) void {
-    doClientRequestStmt(.MempoolChange, @ptrToInt(pool), @ptrToInt(addrA), @ptrToInt(mem.ptr), mem.len, 0);
+    doClientRequestStmt(.MempoolChange, @intFromPtr(pool), @intFromPtr(addrA), @intFromPtr(mem.ptr), mem.len, 0);
 }
 
 /// Return if a mempool exists.
 pub fn mempoolExists(pool: [*]u8) bool {
-    return doClientRequestExpr(0, .MempoolExists, @ptrToInt(pool), 0, 0, 0, 0) != 0;
+    return doClientRequestExpr(0, .MempoolExists, @intFromPtr(pool), 0, 0, 0, 0) != 0;
 }
 
 /// Mark a piece of memory as being a stack. Returns a stack id.
 /// start is the lowest addressable stack byte, end is the highest
 /// addressable stack byte.
 pub fn stackRegister(stack: []u8) usize {
-    return doClientRequestExpr(0, .StackRegister, @ptrToInt(stack.ptr), @ptrToInt(stack.ptr) + stack.len, 0, 0, 0);
+    return doClientRequestExpr(0, .StackRegister, @intFromPtr(stack.ptr), @intFromPtr(stack.ptr) + stack.len, 0, 0, 0);
 }
 
 /// Unmark the piece of memory associated with a stack id as being a stack.
@@ -210,7 +278,7 @@ pub fn stackDeregister(id: usize) void {
 /// start is the new lowest addressable stack byte, end is the new highest
 /// addressable stack byte.
 pub fn stackChange(id: usize, newstack: []u8) void {
-    doClientRequestStmt(.StackChange, id, @ptrToInt(newstack.ptr), @ptrToInt(newstack.ptr) + newstack.len, 0, 0);
+    doClientRequestStmt(.StackChange, id, @intFromPtr(newstack.ptr), @intFromPtr(newstack.ptr) + newstack.len, 0, 0);
 }
 
 // Load PDB debug info for Wine PE image_map.
@@ -225,7 +293,7 @@ pub fn stackChange(id: usize, newstack: []u8) void {
 /// result will be dumped in there and is guaranteed to be zero
 /// terminated.  If no info is found, the first byte is set to zero.
 pub fn mapIpToSrcloc(addr: *const u8, buf64: [64]u8) usize {
-    return doClientRequestExpr(0, .MapIpToSrcloc, @ptrToInt(addr), @ptrToInt(&buf64[0]), 0, 0, 0);
+    return doClientRequestExpr(0, .MapIpToSrcloc, @intFromPtr(addr), @intFromPtr(&buf64[0]), 0, 0, 0);
 }
 
 /// Disable error reporting for this thread.  Behaves in a stack like
@@ -240,7 +308,7 @@ pub fn disableErrorReporting() void {
     doClientRequestStmt(.ChangeErrDisablement, 1, 0, 0, 0, 0);
 }
 
-/// Re-enable error reporting, (see disableErrorReporting())
+/// Re-enable error reporting. (see disableErrorReporting())
 pub fn enableErrorReporting() void {
     doClientRequestStmt(.ChangeErrDisablement, math.maxInt(usize), 0, 0, 0, 0);
 }
@@ -251,13 +319,15 @@ pub fn enableErrorReporting() void {
 /// If no connection is opened, output will go to the log output.
 /// Returns 1 if command not recognised, 0 otherwise.
 pub fn monitorCommand(command: [*]u8) bool {
-    return doClientRequestExpr(0, .GdbMonitorCommand, @ptrToInt(command.ptr), 0, 0, 0, 0) != 0;
+    return doClientRequestExpr(0, .GdbMonitorCommand, @intFromPtr(command), 0, 0, 0, 0) != 0;
 }
 
 pub const memcheck = @import("valgrind/memcheck.zig");
 pub const callgrind = @import("valgrind/callgrind.zig");
+pub const cachegrind = @import("valgrind/cachegrind.zig");
 
 test {
-    _ = @import("valgrind/memcheck.zig");
-    _ = @import("valgrind/callgrind.zig");
+    _ = memcheck;
+    _ = callgrind;
+    _ = cachegrind;
 }

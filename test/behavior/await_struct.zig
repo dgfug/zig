@@ -10,9 +10,11 @@ var await_a_promise: anyframe = undefined;
 var await_final_result = Foo{ .x = 0 };
 
 test "coroutine await struct" {
+    if (true) return error.SkipZigTest; // TODO
+
     await_seq('a');
     var p = async await_amain();
-    _ = p;
+    _ = &p;
     await_seq('f');
     resume await_a_promise;
     await_seq('i');

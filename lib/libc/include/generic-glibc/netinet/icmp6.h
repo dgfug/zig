@@ -1,4 +1,4 @@
-/* Copyright (C) 1991-2021 Free Software Foundation, Inc.
+/* Copyright (C) 1991-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -69,6 +69,8 @@ struct icmp6_hdr
 #define MLD_LISTENER_QUERY          130
 #define MLD_LISTENER_REPORT         131
 #define MLD_LISTENER_REDUCTION      132
+#define ICMPV6_EXT_ECHO_REQUEST	    160
+#define ICMPV6_EXT_ECHO_REPLY	    161
 
 #define ICMP6_DST_UNREACH_NOROUTE     0 /* no route to destination */
 #define ICMP6_DST_UNREACH_ADMIN       1 /* communication with destination */

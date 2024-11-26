@@ -5,8 +5,7 @@ const std = @import("std");
 const math = std.math;
 const mem = std.mem;
 const Allocator = mem.Allocator;
-const debug = std.debug;
-const assert = debug.assert;
+const assert = std.debug.assert;
 const testing = std.testing;
 
 pub const LinearFifoBufferType = union(enum) {
@@ -33,7 +32,7 @@ pub fn LinearFifo(
     };
 
     return struct {
-        allocator: if (buffer_type == .Dynamic) *Allocator else void,
+        allocator: if (buffer_type == .Dynamic) Allocator else void,
         buf: if (buffer_type == .Static) [buffer_type.Static]T else []T,
         head: usize,
         count: usize,
@@ -47,38 +46,41 @@ pub fn LinearFifo(
         // returned a slice into a copy on the stack
         const SliceSelfArg = if (buffer_type == .Static) *Self else Self;
 
-        pub usingnamespace switch (buffer_type) {
-            .Static => struct {
-                pub fn init() Self {
-                    return .{
-                        .allocator = {},
-                        .buf = undefined,
-                        .head = 0,
-                        .count = 0,
-                    };
-                }
-            },
-            .Slice => struct {
-                pub fn init(buf: []T) Self {
-                    return .{
-                        .allocator = {},
-                        .buf = buf,
-                        .head = 0,
-                        .count = 0,
-                    };
-                }
-            },
-            .Dynamic => struct {
-                pub fn init(allocator: *Allocator) Self {
-                    return .{
-                        .allocator = allocator,
-                        .buf = &[_]T{},
-                        .head = 0,
-                        .count = 0,
-                    };
-                }
-            },
+        pub const init = switch (buffer_type) {
+            .Static => initStatic,
+            .Slice => initSlice,
+            .Dynamic => initDynamic,
         };
+
+        fn initStatic() Self {
+            comptime assert(buffer_type == .Static);
+            return .{
+                .allocator = {},
+                .buf = undefined,
+                .head = 0,
+                .count = 0,
+            };
+        }
+
+        fn initSlice(buf: []T) Self {
+            comptime assert(buffer_type == .Slice);
+            return .{
+                .allocator = {},
+                .buf = buf,
+                .head = 0,
+                .count = 0,
+            };
+        }
+
+        fn initDynamic(allocator: Allocator) Self {
+            comptime assert(buffer_type == .Dynamic);
+            return .{
+                .allocator = allocator,
+                .buf = &.{},
+                .head = 0,
+                .count = 0,
+            };
+        }
 
         pub fn deinit(self: Self) void {
             if (buffer_type == .Dynamic) self.allocator.free(self.buf);
@@ -86,25 +88,23 @@ pub fn LinearFifo(
 
         pub fn realign(self: *Self) void {
             if (self.buf.len - self.head >= self.count) {
-                // this copy overlaps
-                mem.copy(T, self.buf[0..self.count], self.buf[self.head..][0..self.count]);
+                mem.copyForwards(T, self.buf[0..self.count], self.buf[self.head..][0..self.count]);
                 self.head = 0;
             } else {
                 var tmp: [mem.page_size / 2 / @sizeOf(T)]T = undefined;
 
                 while (self.head != 0) {
-                    const n = math.min(self.head, tmp.len);
+                    const n = @min(self.head, tmp.len);
                     const m = self.buf.len - n;
-                    mem.copy(T, tmp[0..n], self.buf[0..n]);
-                    // this middle copy overlaps; the others here don't
-                    mem.copy(T, self.buf[0..m], self.buf[n..][0..m]);
-                    mem.copy(T, self.buf[m..], tmp[0..n]);
+                    @memcpy(tmp[0..n], self.buf[0..n]);
+                    mem.copyForwards(T, self.buf[0..m], self.buf[n..][0..m]);
+                    @memcpy(self.buf[m..][0..n], tmp[0..n]);
                     self.head -= n;
                 }
             }
             { // set unused area to undefined
                 const unused = mem.sliceAsBytes(self.buf[self.count..]);
-                @memset(unused.ptr, undefined, unused.len);
+                @memset(unused, undefined);
             }
         }
 
@@ -118,9 +118,6 @@ pub fn LinearFifo(
                 };
             }
         }
-
-        /// Deprecated: call `ensureUnusedCapacity` or `ensureTotalCapacity`.
-        pub const ensureCapacity = ensureTotalCapacity;
 
         /// Ensure that the buffer can fit at least `size` items
         pub fn ensureTotalCapacity(self: *Self, size: usize) !void {
@@ -155,7 +152,7 @@ pub fn LinearFifo(
                 start -= self.buf.len;
                 return self.buf[start .. start + (self.count - offset)];
             } else {
-                const end = math.min(self.head + self.count, self.buf.len);
+                const end = @min(self.head + self.count, self.buf.len);
                 return self.buf[start..end];
             }
         }
@@ -165,6 +162,17 @@ pub fn LinearFifo(
             return self.readableSliceMut(offset);
         }
 
+        pub fn readableSliceOfLen(self: *Self, len: usize) []const T {
+            assert(len <= self.count);
+            const buf = self.readableSlice(0);
+            if (buf.len >= len) {
+                return buf[0..len];
+            } else {
+                self.realign();
+                return self.readableSlice(0)[0..len];
+            }
+        }
+
         /// Discard first `count` items in the fifo
         pub fn discard(self: *Self, count: usize) void {
             assert(count <= self.count);
@@ -172,12 +180,12 @@ pub fn LinearFifo(
                 const slice = self.readableSliceMut(0);
                 if (slice.len >= count) {
                     const unused = mem.sliceAsBytes(slice[0..count]);
-                    @memset(unused.ptr, undefined, unused.len);
+                    @memset(unused, undefined);
                 } else {
                     const unused = mem.sliceAsBytes(slice[0..]);
-                    @memset(unused.ptr, undefined, unused.len);
+                    @memset(unused, undefined);
                     const unused2 = mem.sliceAsBytes(self.readableSliceMut(slice.len)[0 .. count - slice.len]);
-                    @memset(unused2.ptr, undefined, unused2.len);
+                    @memset(unused2, undefined);
                 }
             }
             if (autoalign and self.count == count) {
@@ -213,8 +221,8 @@ pub fn LinearFifo(
             while (dst_left.len > 0) {
                 const slice = self.readableSlice(0);
                 if (slice.len == 0) break;
-                const n = math.min(slice.len, dst_left.len);
-                mem.copy(T, dst_left, slice[0..n]);
+                const n = @min(slice.len, dst_left.len);
+                @memcpy(dst_left[0..n], slice[0..n]);
                 self.discard(n);
                 dst_left = dst_left[n..];
             }
@@ -237,7 +245,7 @@ pub fn LinearFifo(
             return self.buf.len - self.count;
         }
 
-        /// Returns the first section of writable buffer
+        /// Returns the first section of writable buffer.
         /// Note that this may be of length 0
         pub fn writableSlice(self: SliceSelfArg, offset: usize) []T {
             if (offset > self.buf.len) return &[_]T{};
@@ -279,8 +287,8 @@ pub fn LinearFifo(
             while (src_left.len > 0) {
                 const writable_slice = self.writableSlice(0);
                 assert(writable_slice.len != 0);
-                const n = math.min(writable_slice.len, src_left.len);
-                mem.copy(T, writable_slice, src_left[0..n]);
+                const n = @min(writable_slice.len, src_left.len);
+                @memcpy(writable_slice[0..n], src_left[0..n]);
                 self.update(n);
                 src_left = src_left[n..];
             }
@@ -344,11 +352,11 @@ pub fn LinearFifo(
 
             const slice = self.readableSliceMut(0);
             if (src.len < slice.len) {
-                mem.copy(T, slice, src);
+                @memcpy(slice[0..src.len], src);
             } else {
-                mem.copy(T, slice, src[0..slice.len]);
+                @memcpy(slice, src[0..slice.len]);
                 const slice2 = self.readableSliceMut(slice.len);
-                mem.copy(T, slice2, src[slice.len..]);
+                @memcpy(slice2[0 .. src.len - slice.len], src[slice.len..]);
             }
         }
 
@@ -366,8 +374,8 @@ pub fn LinearFifo(
             return self.buf[index];
         }
 
-        /// Pump data from a reader into a writer
-        /// stops when reader returns 0 bytes (EOF)
+        /// Pump data from a reader into a writer.
+        /// Stops when reader returns 0 bytes (EOF).
         /// Buffer size must be set before calling; a buffer length of 0 is invalid.
         pub fn pump(self: *Self, src_reader: anytype, dest_writer: anytype) !void {
             assert(self.buf.len > 0);
@@ -383,6 +391,22 @@ pub fn LinearFifo(
             while (self.readableLength() > 0) {
                 self.discard(try dest_writer.write(self.readableSlice(0)));
             }
+        }
+
+        pub fn toOwnedSlice(self: *Self) Allocator.Error![]T {
+            if (self.head != 0) self.realign();
+            assert(self.head == 0);
+            assert(self.count <= self.buf.len);
+            const allocator = self.allocator;
+            if (allocator.resize(self.buf, self.count)) {
+                const result = self.buf[0..self.count];
+                self.* = Self.init(allocator);
+                return result;
+            }
+            const new_memory = try allocator.dupe(T, self.buf[0..self.count]);
+            allocator.free(self.buf);
+            self.* = Self.init(allocator);
+            return new_memory;
         }
     };
 }
@@ -483,7 +507,7 @@ test "LinearFifo(u8, .Dynamic)" {
     }
 }
 
-test "LinearFifo" {
+test LinearFifo {
     inline for ([_]type{ u1, u8, u16, u64 }) |T| {
         inline for ([_]LinearFifoBufferType{ LinearFifoBufferType{ .Static = 32 }, .Slice, .Dynamic }) |bt| {
             const FifoType = LinearFifo(T, bt);

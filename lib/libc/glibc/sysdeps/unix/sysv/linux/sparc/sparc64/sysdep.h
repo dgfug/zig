@@ -1,6 +1,5 @@
-/* Copyright (C) 1997-2020 Free Software Foundation, Inc.
+/* Copyright (C) 1997-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
-   Contributed by Richard Henderson <richard@gnu.ai.mit.edu>, 1997.
 
    The GNU C Library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Lesser General Public
@@ -109,9 +108,8 @@ ENTRY(name);					\
 #define __SYSCALL_STRING						\
 	"ta	0x6d;"							\
 	"bcc,pt	%%xcc, 1f;"						\
-	" mov	0, %%g1;"						\
+	" nop;"								\
 	"sub	%%g0, %%o0, %%o0;"					\
-	"mov	1, %%g1;"						\
 	"1:"
 
 #define __SYSCALL_CLOBBERS						\
@@ -128,25 +126,5 @@ ENTRY(name);					\
 /* This is the offset from the %sp to the backing store above the
    register windows.  So if you poke stack memory directly you add this.  */
 #define STACK_BIAS	2047
-
-/* Pointer mangling support.  */
-#if IS_IN (rtld)
-/* We cannot use the thread descriptor because in ld.so we use setjmp
-   earlier than the descriptor is initialized.  */
-#else
-# ifdef __ASSEMBLER__
-#  define PTR_MANGLE(dreg, reg, tmpreg) \
-  ldx	[%g7 + POINTER_GUARD], tmpreg; \
-  xor	reg, tmpreg, dreg
-#  define PTR_DEMANGLE(dreg, reg, tmpreg) PTR_MANGLE (dreg, reg, tmpreg)
-#  define PTR_MANGLE2(dreg, reg, tmpreg) \
-  xor	reg, tmpreg, dreg
-#  define PTR_DEMANGLE2(dreg, reg, tmpreg) PTR_MANGLE2 (dreg, reg, tmpreg)
-# else
-#  define PTR_MANGLE(var) \
-  (var) = (__typeof (var)) ((uintptr_t) (var) ^ THREAD_GET_POINTER_GUARD ())
-#  define PTR_DEMANGLE(var)     PTR_MANGLE (var)
-# endif
-#endif
 
 #endif /* linux/sparc64/sysdep.h */

@@ -1,5 +1,4 @@
 const std = @import("../std.zig");
-const mem = std.mem;
 
 pub const Token = struct {
     tag: Tag,
@@ -10,7 +9,7 @@ pub const Token = struct {
         end: usize,
     };
 
-    pub const keywords = std.ComptimeStringMap(Tag, .{
+    pub const keywords = std.StaticStringMap(Tag).initComptime(.{
         .{ "addrspace", .keyword_addrspace },
         .{ "align", .keyword_align },
         .{ "allowzero", .keyword_allowzero },
@@ -137,8 +136,7 @@ pub const Token = struct {
         angle_bracket_angle_bracket_right,
         angle_bracket_angle_bracket_right_equal,
         tilde,
-        integer_literal,
-        float_literal,
+        number_literal,
         doc_comment,
         container_doc_comment,
         keyword_addrspace,
@@ -200,8 +198,7 @@ pub const Token = struct {
                 .char_literal,
                 .eof,
                 .builtin,
-                .integer_literal,
-                .float_literal,
+                .number_literal,
                 .doc_comment,
                 .container_doc_comment,
                 => null,
@@ -322,7 +319,17 @@ pub const Token = struct {
         }
 
         pub fn symbol(tag: Tag) []const u8 {
-            return tag.lexeme() orelse @tagName(tag);
+            return tag.lexeme() orelse switch (tag) {
+                .invalid => "invalid token",
+                .identifier => "an identifier",
+                .string_literal, .multiline_string_literal_line => "a string literal",
+                .char_literal => "a character literal",
+                .eof => "EOF",
+                .builtin => "a builtin function",
+                .number_literal => "a number literal",
+                .doc_comment, .container_doc_comment => "a document comment",
+                else => unreachable,
+            };
         }
     };
 };
@@ -330,25 +337,23 @@ pub const Token = struct {
 pub const Tokenizer = struct {
     buffer: [:0]const u8,
     index: usize,
-    pending_invalid_token: ?Token,
 
-    /// For debugging purposes
+    /// For debugging purposes.
     pub fn dump(self: *Tokenizer, token: *const Token) void {
-        std.debug.warn("{s} \"{s}\"\n", .{ @tagName(token.tag), self.buffer[token.start..token.end] });
+        std.debug.print("{s} \"{s}\"\n", .{ @tagName(token.tag), self.buffer[token.loc.start..token.loc.end] });
     }
 
     pub fn init(buffer: [:0]const u8) Tokenizer {
-        // Skip the UTF-8 BOM if present
-        const src_start = if (mem.startsWith(u8, buffer, "\xEF\xBB\xBF")) 3 else @as(usize, 0);
-        return Tokenizer{
+        // Skip the UTF-8 BOM if present.
+        return .{
             .buffer = buffer,
-            .index = src_start,
-            .pending_invalid_token = null,
+            .index = if (std.mem.startsWith(u8, buffer, "\xEF\xBB\xBF")) 3 else 0,
         };
     }
 
     const State = enum {
         start,
+        expect_newline,
         identifier,
         builtin,
         string_literal,
@@ -356,12 +361,6 @@ pub const Tokenizer = struct {
         multiline_string_literal_line,
         char_literal,
         char_literal_backslash,
-        char_literal_hex_escape,
-        char_literal_unicode_escape_saw_u,
-        char_literal_unicode_escape,
-        char_literal_unicode_invalid,
-        char_literal_unicode,
-        char_literal_end,
         backslash,
         equal,
         bang,
@@ -377,24 +376,11 @@ pub const Tokenizer = struct {
         line_comment,
         doc_comment_start,
         doc_comment,
-        zero,
-        int_literal_dec,
-        int_literal_dec_no_underscore,
-        int_literal_bin,
-        int_literal_bin_no_underscore,
-        int_literal_oct,
-        int_literal_oct_no_underscore,
-        int_literal_hex,
-        int_literal_hex_no_underscore,
-        num_dot_dec,
-        num_dot_hex,
-        float_fraction_dec,
-        float_fraction_dec_no_underscore,
-        float_fraction_hex,
-        float_fraction_hex_no_underscore,
-        float_exponent_unsigned,
-        float_exponent_num,
-        float_exponent_num_no_underscore,
+        int,
+        int_exponent,
+        int_period,
+        float,
+        float_exponent,
         ampersand,
         caret,
         percent,
@@ -410,1052 +396,719 @@ pub const Tokenizer = struct {
         period_2,
         period_asterisk,
         saw_at_sign,
+        invalid,
     };
 
+    /// After this returns invalid, it will reset on the next newline, returning tokens starting from there.
+    /// An eof token will always be returned at the end.
     pub fn next(self: *Tokenizer) Token {
-        if (self.pending_invalid_token) |token| {
-            self.pending_invalid_token = null;
-            return token;
-        }
-        var state: State = .start;
-        var result = Token{
-            .tag = .eof,
+        var result: Token = .{
+            .tag = undefined,
             .loc = .{
                 .start = self.index,
                 .end = undefined,
             },
         };
-        var seen_escape_digits: usize = undefined;
-        var remaining_code_units: usize = undefined;
-        while (true) : (self.index += 1) {
-            const c = self.buffer[self.index];
-            switch (state) {
-                .start => switch (c) {
-                    0 => break,
-                    ' ', '\n', '\t', '\r' => {
-                        result.loc.start = self.index + 1;
-                    },
-                    '"' => {
-                        state = .string_literal;
-                        result.tag = .string_literal;
-                    },
-                    '\'' => {
-                        state = .char_literal;
-                    },
-                    'a'...'z', 'A'...'Z', '_' => {
-                        state = .identifier;
-                        result.tag = .identifier;
-                    },
-                    '@' => {
-                        state = .saw_at_sign;
-                    },
-                    '=' => {
-                        state = .equal;
-                    },
-                    '!' => {
-                        state = .bang;
-                    },
-                    '|' => {
-                        state = .pipe;
-                    },
-                    '(' => {
-                        result.tag = .l_paren;
-                        self.index += 1;
-                        break;
-                    },
-                    ')' => {
-                        result.tag = .r_paren;
-                        self.index += 1;
-                        break;
-                    },
-                    '[' => {
-                        result.tag = .l_bracket;
-                        self.index += 1;
-                        break;
-                    },
-                    ']' => {
-                        result.tag = .r_bracket;
-                        self.index += 1;
-                        break;
-                    },
-                    ';' => {
-                        result.tag = .semicolon;
-                        self.index += 1;
-                        break;
-                    },
-                    ',' => {
-                        result.tag = .comma;
-                        self.index += 1;
-                        break;
-                    },
-                    '?' => {
-                        result.tag = .question_mark;
-                        self.index += 1;
-                        break;
-                    },
-                    ':' => {
-                        result.tag = .colon;
-                        self.index += 1;
-                        break;
-                    },
-                    '%' => {
-                        state = .percent;
-                    },
-                    '*' => {
-                        state = .asterisk;
-                    },
-                    '+' => {
-                        state = .plus;
-                    },
-                    '<' => {
-                        state = .angle_bracket_left;
-                    },
-                    '>' => {
-                        state = .angle_bracket_right;
-                    },
-                    '^' => {
-                        state = .caret;
-                    },
-                    '\\' => {
-                        state = .backslash;
-                        result.tag = .multiline_string_literal_line;
-                    },
-                    '{' => {
-                        result.tag = .l_brace;
-                        self.index += 1;
-                        break;
-                    },
-                    '}' => {
-                        result.tag = .r_brace;
-                        self.index += 1;
-                        break;
-                    },
-                    '~' => {
-                        result.tag = .tilde;
-                        self.index += 1;
-                        break;
-                    },
-                    '.' => {
-                        state = .period;
-                    },
-                    '-' => {
-                        state = .minus;
-                    },
-                    '/' => {
-                        state = .slash;
-                    },
-                    '&' => {
-                        state = .ampersand;
-                    },
-                    '0' => {
-                        state = .zero;
-                        result.tag = .integer_literal;
-                    },
-                    '1'...'9' => {
-                        state = .int_literal_dec;
-                        result.tag = .integer_literal;
-                    },
-                    else => {
-                        result.tag = .invalid;
-                        result.loc.end = self.index;
-                        self.index += 1;
-                        return result;
-                    },
+        state: switch (State.start) {
+            .start => switch (self.buffer[self.index]) {
+                0 => {
+                    if (self.index == self.buffer.len) {
+                        return .{
+                            .tag = .eof,
+                            .loc = .{
+                                .start = self.index,
+                                .end = self.index,
+                            },
+                        };
+                    } else {
+                        continue :state .invalid;
+                    }
                 },
+                ' ', '\n', '\t', '\r' => {
+                    self.index += 1;
+                    result.loc.start = self.index;
+                    continue :state .start;
+                },
+                '"' => {
+                    result.tag = .string_literal;
+                    continue :state .string_literal;
+                },
+                '\'' => {
+                    result.tag = .char_literal;
+                    continue :state .char_literal;
+                },
+                'a'...'z', 'A'...'Z', '_' => {
+                    result.tag = .identifier;
+                    continue :state .identifier;
+                },
+                '@' => continue :state .saw_at_sign,
+                '=' => continue :state .equal,
+                '!' => continue :state .bang,
+                '|' => continue :state .pipe,
+                '(' => {
+                    result.tag = .l_paren;
+                    self.index += 1;
+                },
+                ')' => {
+                    result.tag = .r_paren;
+                    self.index += 1;
+                },
+                '[' => {
+                    result.tag = .l_bracket;
+                    self.index += 1;
+                },
+                ']' => {
+                    result.tag = .r_bracket;
+                    self.index += 1;
+                },
+                ';' => {
+                    result.tag = .semicolon;
+                    self.index += 1;
+                },
+                ',' => {
+                    result.tag = .comma;
+                    self.index += 1;
+                },
+                '?' => {
+                    result.tag = .question_mark;
+                    self.index += 1;
+                },
+                ':' => {
+                    result.tag = .colon;
+                    self.index += 1;
+                },
+                '%' => continue :state .percent,
+                '*' => continue :state .asterisk,
+                '+' => continue :state .plus,
+                '<' => continue :state .angle_bracket_left,
+                '>' => continue :state .angle_bracket_right,
+                '^' => continue :state .caret,
+                '\\' => {
+                    result.tag = .multiline_string_literal_line;
+                    continue :state .backslash;
+                },
+                '{' => {
+                    result.tag = .l_brace;
+                    self.index += 1;
+                },
+                '}' => {
+                    result.tag = .r_brace;
+                    self.index += 1;
+                },
+                '~' => {
+                    result.tag = .tilde;
+                    self.index += 1;
+                },
+                '.' => continue :state .period,
+                '-' => continue :state .minus,
+                '/' => continue :state .slash,
+                '&' => continue :state .ampersand,
+                '0'...'9' => {
+                    result.tag = .number_literal;
+                    self.index += 1;
+                    continue :state .int;
+                },
+                else => continue :state .invalid,
+            },
 
-                .saw_at_sign => switch (c) {
+            .expect_newline => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    0 => {
+                        if (self.index == self.buffer.len) {
+                            result.tag = .invalid;
+                        } else {
+                            continue :state .invalid;
+                        }
+                    },
+                    '\n' => {
+                        self.index += 1;
+                        result.loc.start = self.index;
+                        continue :state .start;
+                    },
+                    else => continue :state .invalid,
+                }
+            },
+
+            .invalid => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    0 => if (self.index == self.buffer.len) {
+                        result.tag = .invalid;
+                    } else {
+                        continue :state .invalid;
+                    },
+                    '\n' => result.tag = .invalid,
+                    else => continue :state .invalid,
+                }
+            },
+
+            .saw_at_sign => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    0, '\n' => result.tag = .invalid,
                     '"' => {
                         result.tag = .identifier;
-                        state = .string_literal;
+                        continue :state .string_literal;
                     },
                     'a'...'z', 'A'...'Z', '_' => {
-                        state = .builtin;
                         result.tag = .builtin;
+                        continue :state .builtin;
                     },
-                    else => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                },
+                    else => continue :state .invalid,
+                }
+            },
 
-                .ampersand => switch (c) {
+            .ampersand => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .ampersand_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .ampersand;
-                        break;
-                    },
-                },
+                    else => result.tag = .ampersand,
+                }
+            },
 
-                .asterisk => switch (c) {
+            .asterisk => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .asterisk_equal;
                         self.index += 1;
-                        break;
                     },
                     '*' => {
                         result.tag = .asterisk_asterisk;
                         self.index += 1;
-                        break;
                     },
-                    '%' => {
-                        state = .asterisk_percent;
-                    },
-                    '|' => {
-                        state = .asterisk_pipe;
-                    },
-                    else => {
-                        result.tag = .asterisk;
-                        break;
-                    },
-                },
+                    '%' => continue :state .asterisk_percent,
+                    '|' => continue :state .asterisk_pipe,
+                    else => result.tag = .asterisk,
+                }
+            },
 
-                .asterisk_percent => switch (c) {
+            .asterisk_percent => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .asterisk_percent_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .asterisk_percent;
-                        break;
-                    },
-                },
+                    else => result.tag = .asterisk_percent,
+                }
+            },
 
-                .asterisk_pipe => switch (c) {
+            .asterisk_pipe => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .asterisk_pipe_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .asterisk_pipe;
-                        break;
-                    },
-                },
+                    else => result.tag = .asterisk_pipe,
+                }
+            },
 
-                .percent => switch (c) {
+            .percent => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .percent_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .percent;
-                        break;
-                    },
-                },
+                    else => result.tag = .percent,
+                }
+            },
 
-                .plus => switch (c) {
+            .plus => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .plus_equal;
                         self.index += 1;
-                        break;
                     },
                     '+' => {
                         result.tag = .plus_plus;
                         self.index += 1;
-                        break;
                     },
-                    '%' => {
-                        state = .plus_percent;
-                    },
-                    '|' => {
-                        state = .plus_pipe;
-                    },
-                    else => {
-                        result.tag = .plus;
-                        break;
-                    },
-                },
+                    '%' => continue :state .plus_percent,
+                    '|' => continue :state .plus_pipe,
+                    else => result.tag = .plus,
+                }
+            },
 
-                .plus_percent => switch (c) {
+            .plus_percent => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .plus_percent_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .plus_percent;
-                        break;
-                    },
-                },
+                    else => result.tag = .plus_percent,
+                }
+            },
 
-                .plus_pipe => switch (c) {
+            .plus_pipe => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .plus_pipe_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .plus_pipe;
-                        break;
-                    },
-                },
+                    else => result.tag = .plus_pipe,
+                }
+            },
 
-                .caret => switch (c) {
+            .caret => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .caret_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .caret;
-                        break;
-                    },
-                },
+                    else => result.tag = .caret,
+                }
+            },
 
-                .identifier => switch (c) {
-                    'a'...'z', 'A'...'Z', '_', '0'...'9' => {},
+            .identifier => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    'a'...'z', 'A'...'Z', '_', '0'...'9' => continue :state .identifier,
                     else => {
-                        if (Token.getKeyword(self.buffer[result.loc.start..self.index])) |tag| {
+                        const ident = self.buffer[result.loc.start..self.index];
+                        if (Token.getKeyword(ident)) |tag| {
                             result.tag = tag;
                         }
-                        break;
                     },
-                },
-                .builtin => switch (c) {
-                    'a'...'z', 'A'...'Z', '_', '0'...'9' => {},
-                    else => break,
-                },
-                .backslash => switch (c) {
-                    '\\' => {
-                        state = .multiline_string_literal_line;
-                    },
-                    else => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                },
-                .string_literal => switch (c) {
-                    '\\' => {
-                        state = .string_literal_backslash;
-                    },
-                    '"' => {
-                        self.index += 1;
-                        break;
-                    },
+                }
+            },
+            .builtin => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    'a'...'z', 'A'...'Z', '_', '0'...'9' => continue :state .builtin,
+                    else => {},
+                }
+            },
+            .backslash => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    0 => result.tag = .invalid,
+                    '\\' => continue :state .multiline_string_literal_line,
+                    '\n' => result.tag = .invalid,
+                    else => continue :state .invalid,
+                }
+            },
+            .string_literal => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     0 => {
-                        if (self.index == self.buffer.len) {
-                            break;
+                        if (self.index != self.buffer.len) {
+                            continue :state .invalid;
                         } else {
-                            self.checkLiteralCharacter();
+                            result.tag = .invalid;
                         }
                     },
-                    '\n' => {
-                        result.tag = .invalid;
-                        break;
+                    '\n' => result.tag = .invalid,
+                    '\\' => continue :state .string_literal_backslash,
+                    '"' => self.index += 1,
+                    0x01...0x09, 0x0b...0x1f, 0x7f => {
+                        continue :state .invalid;
                     },
-                    else => self.checkLiteralCharacter(),
-                },
+                    else => continue :state .string_literal,
+                }
+            },
 
-                .string_literal_backslash => switch (c) {
-                    0, '\n' => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    else => {
-                        state = .string_literal;
-                    },
-                },
+            .string_literal_backslash => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    0, '\n' => result.tag = .invalid,
+                    else => continue :state .string_literal,
+                }
+            },
 
-                .char_literal => switch (c) {
+            .char_literal => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     0 => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    '\\' => {
-                        state = .char_literal_backslash;
-                    },
-                    '\'', 0x80...0xbf, 0xf8...0xff => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    0xc0...0xdf => { // 110xxxxx
-                        remaining_code_units = 1;
-                        state = .char_literal_unicode;
-                    },
-                    0xe0...0xef => { // 1110xxxx
-                        remaining_code_units = 2;
-                        state = .char_literal_unicode;
-                    },
-                    0xf0...0xf7 => { // 11110xxx
-                        remaining_code_units = 3;
-                        state = .char_literal_unicode;
-                    },
-                    else => {
-                        state = .char_literal_end;
-                    },
-                },
-
-                .char_literal_backslash => switch (c) {
-                    0, '\n' => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    'x' => {
-                        state = .char_literal_hex_escape;
-                        seen_escape_digits = 0;
-                    },
-                    'u' => {
-                        state = .char_literal_unicode_escape_saw_u;
-                    },
-                    else => {
-                        state = .char_literal_end;
-                    },
-                },
-
-                .char_literal_hex_escape => switch (c) {
-                    '0'...'9', 'a'...'f', 'A'...'F' => {
-                        seen_escape_digits += 1;
-                        if (seen_escape_digits == 2) {
-                            state = .char_literal_end;
+                        if (self.index != self.buffer.len) {
+                            continue :state .invalid;
+                        } else {
+                            result.tag = .invalid;
                         }
                     },
-                    else => {
-                        result.tag = .invalid;
-                        break;
+                    '\n' => result.tag = .invalid,
+                    '\\' => continue :state .char_literal_backslash,
+                    '\'' => self.index += 1,
+                    0x01...0x09, 0x0b...0x1f, 0x7f => {
+                        continue :state .invalid;
                     },
-                },
+                    else => continue :state .char_literal,
+                }
+            },
 
-                .char_literal_unicode_escape_saw_u => switch (c) {
+            .char_literal_backslash => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     0 => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    '{' => {
-                        state = .char_literal_unicode_escape;
-                    },
-                    else => {
-                        result.tag = .invalid;
-                        state = .char_literal_unicode_invalid;
-                    },
-                },
-
-                .char_literal_unicode_escape => switch (c) {
-                    0 => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    '0'...'9', 'a'...'f', 'A'...'F' => {},
-                    '}' => {
-                        state = .char_literal_end; // too many/few digits handled later
-                    },
-                    else => {
-                        result.tag = .invalid;
-                        state = .char_literal_unicode_invalid;
-                    },
-                },
-
-                .char_literal_unicode_invalid => switch (c) {
-                    // Keep consuming characters until an obvious stopping point.
-                    // This consolidates e.g. `u{0ab1Q}` into a single invalid token
-                    // instead of creating the tokens `u{0ab1`, `Q`, `}`
-                    '0'...'9', 'a'...'z', 'A'...'Z', '}' => {},
-                    else => break,
-                },
-
-                .char_literal_end => switch (c) {
-                    '\'' => {
-                        result.tag = .char_literal;
-                        self.index += 1;
-                        break;
-                    },
-                    else => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                },
-
-                .char_literal_unicode => switch (c) {
-                    0x80...0xbf => {
-                        remaining_code_units -= 1;
-                        if (remaining_code_units == 0) {
-                            state = .char_literal_end;
+                        if (self.index != self.buffer.len) {
+                            continue :state .invalid;
+                        } else {
+                            result.tag = .invalid;
                         }
                     },
-                    else => {
-                        result.tag = .invalid;
-                        break;
+                    '\n' => result.tag = .invalid,
+                    0x01...0x09, 0x0b...0x1f, 0x7f => {
+                        continue :state .invalid;
                     },
-                },
+                    else => continue :state .char_literal,
+                }
+            },
 
-                .multiline_string_literal_line => switch (c) {
-                    0 => break,
-                    '\n' => {
-                        self.index += 1;
-                        break;
+            .multiline_string_literal_line => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    0 => if (self.index != self.buffer.len) {
+                        continue :state .invalid;
                     },
-                    '\t' => {},
-                    else => self.checkLiteralCharacter(),
-                },
+                    '\n' => {},
+                    '\r' => if (self.buffer[self.index + 1] != '\n') {
+                        continue :state .invalid;
+                    },
+                    0x01...0x09, 0x0b...0x0c, 0x0e...0x1f, 0x7f => continue :state .invalid,
+                    else => continue :state .multiline_string_literal_line,
+                }
+            },
 
-                .bang => switch (c) {
+            .bang => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .bang_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .bang;
-                        break;
-                    },
-                },
+                    else => result.tag = .bang,
+                }
+            },
 
-                .pipe => switch (c) {
+            .pipe => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .pipe_equal;
                         self.index += 1;
-                        break;
                     },
                     '|' => {
                         result.tag = .pipe_pipe;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .pipe;
-                        break;
-                    },
-                },
+                    else => result.tag = .pipe,
+                }
+            },
 
-                .equal => switch (c) {
+            .equal => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .equal_equal;
                         self.index += 1;
-                        break;
                     },
                     '>' => {
                         result.tag = .equal_angle_bracket_right;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .equal;
-                        break;
-                    },
-                },
+                    else => result.tag = .equal,
+                }
+            },
 
-                .minus => switch (c) {
+            .minus => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '>' => {
                         result.tag = .arrow;
                         self.index += 1;
-                        break;
                     },
                     '=' => {
                         result.tag = .minus_equal;
                         self.index += 1;
-                        break;
                     },
-                    '%' => {
-                        state = .minus_percent;
-                    },
-                    '|' => {
-                        state = .minus_pipe;
-                    },
-                    else => {
-                        result.tag = .minus;
-                        break;
-                    },
-                },
+                    '%' => continue :state .minus_percent,
+                    '|' => continue :state .minus_pipe,
+                    else => result.tag = .minus,
+                }
+            },
 
-                .minus_percent => switch (c) {
+            .minus_percent => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .minus_percent_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .minus_percent;
-                        break;
-                    },
-                },
-                .minus_pipe => switch (c) {
+                    else => result.tag = .minus_percent,
+                }
+            },
+            .minus_pipe => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .minus_pipe_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .minus_pipe;
-                        break;
-                    },
-                },
+                    else => result.tag = .minus_pipe,
+                }
+            },
 
-                .angle_bracket_left => switch (c) {
-                    '<' => {
-                        state = .angle_bracket_angle_bracket_left;
-                    },
+            .angle_bracket_left => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    '<' => continue :state .angle_bracket_angle_bracket_left,
                     '=' => {
                         result.tag = .angle_bracket_left_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .angle_bracket_left;
-                        break;
-                    },
-                },
+                    else => result.tag = .angle_bracket_left,
+                }
+            },
 
-                .angle_bracket_angle_bracket_left => switch (c) {
+            .angle_bracket_angle_bracket_left => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .angle_bracket_angle_bracket_left_equal;
                         self.index += 1;
-                        break;
                     },
-                    '|' => {
-                        state = .angle_bracket_angle_bracket_left_pipe;
-                    },
-                    else => {
-                        result.tag = .angle_bracket_angle_bracket_left;
-                        break;
-                    },
-                },
+                    '|' => continue :state .angle_bracket_angle_bracket_left_pipe,
+                    else => result.tag = .angle_bracket_angle_bracket_left,
+                }
+            },
 
-                .angle_bracket_angle_bracket_left_pipe => switch (c) {
+            .angle_bracket_angle_bracket_left_pipe => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .angle_bracket_angle_bracket_left_pipe_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .angle_bracket_angle_bracket_left_pipe;
-                        break;
-                    },
-                },
+                    else => result.tag = .angle_bracket_angle_bracket_left_pipe,
+                }
+            },
 
-                .angle_bracket_right => switch (c) {
-                    '>' => {
-                        state = .angle_bracket_angle_bracket_right;
-                    },
+            .angle_bracket_right => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    '>' => continue :state .angle_bracket_angle_bracket_right,
                     '=' => {
                         result.tag = .angle_bracket_right_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .angle_bracket_right;
-                        break;
-                    },
-                },
+                    else => result.tag = .angle_bracket_right,
+                }
+            },
 
-                .angle_bracket_angle_bracket_right => switch (c) {
+            .angle_bracket_angle_bracket_right => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '=' => {
                         result.tag = .angle_bracket_angle_bracket_right_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .angle_bracket_angle_bracket_right;
-                        break;
-                    },
-                },
+                    else => result.tag = .angle_bracket_angle_bracket_right,
+                }
+            },
 
-                .period => switch (c) {
-                    '.' => {
-                        state = .period_2;
-                    },
-                    '*' => {
-                        state = .period_asterisk;
-                    },
-                    else => {
-                        result.tag = .period;
-                        break;
-                    },
-                },
+            .period => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    '.' => continue :state .period_2,
+                    '*' => continue :state .period_asterisk,
+                    else => result.tag = .period,
+                }
+            },
 
-                .period_2 => switch (c) {
+            .period_2 => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     '.' => {
                         result.tag = .ellipsis3;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .ellipsis2;
-                        break;
-                    },
-                },
+                    else => result.tag = .ellipsis2,
+                }
+            },
 
-                .period_asterisk => switch (c) {
-                    '*' => {
-                        result.tag = .invalid_periodasterisks;
-                        break;
-                    },
-                    else => {
-                        result.tag = .period_asterisk;
-                        break;
-                    },
-                },
+            .period_asterisk => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    '*' => result.tag = .invalid_periodasterisks,
+                    else => result.tag = .period_asterisk,
+                }
+            },
 
-                .slash => switch (c) {
-                    '/' => {
-                        state = .line_comment_start;
-                    },
+            .slash => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    '/' => continue :state .line_comment_start,
                     '=' => {
                         result.tag = .slash_equal;
                         self.index += 1;
-                        break;
                     },
-                    else => {
-                        result.tag = .slash;
-                        break;
-                    },
-                },
-                .line_comment_start => switch (c) {
+                    else => result.tag = .slash,
+                }
+            },
+            .line_comment_start => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
                     0 => {
                         if (self.index != self.buffer.len) {
-                            result.tag = .invalid;
-                            self.index += 1;
-                        }
-                        break;
-                    },
-                    '/' => {
-                        state = .doc_comment_start;
+                            continue :state .invalid;
+                        } else return .{
+                            .tag = .eof,
+                            .loc = .{
+                                .start = self.index,
+                                .end = self.index,
+                            },
+                        };
                     },
                     '!' => {
                         result.tag = .container_doc_comment;
-                        state = .doc_comment;
+                        continue :state .doc_comment;
                     },
                     '\n' => {
-                        state = .start;
-                        result.loc.start = self.index + 1;
+                        self.index += 1;
+                        result.loc.start = self.index;
+                        continue :state .start;
                     },
-                    '\t', '\r' => state = .line_comment,
+                    '/' => continue :state .doc_comment_start,
+                    '\r' => continue :state .expect_newline,
+                    0x01...0x09, 0x0b...0x0c, 0x0e...0x1f, 0x7f => {
+                        continue :state .invalid;
+                    },
+                    else => continue :state .line_comment,
+                }
+            },
+            .doc_comment_start => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    0, '\n' => result.tag = .doc_comment,
+                    '\r' => {
+                        if (self.buffer[self.index + 1] == '\n') {
+                            result.tag = .doc_comment;
+                        } else {
+                            continue :state .invalid;
+                        }
+                    },
+                    '/' => continue :state .line_comment,
+                    0x01...0x09, 0x0b...0x0c, 0x0e...0x1f, 0x7f => {
+                        continue :state .invalid;
+                    },
                     else => {
-                        state = .line_comment;
-                        self.checkLiteralCharacter();
-                    },
-                },
-                .doc_comment_start => switch (c) {
-                    '/' => {
-                        state = .line_comment;
-                    },
-                    0, '\n' => {
                         result.tag = .doc_comment;
-                        break;
+                        continue :state .doc_comment;
                     },
-                    '\t', '\r' => {
-                        state = .doc_comment;
-                        result.tag = .doc_comment;
+                }
+            },
+            .line_comment => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    0 => {
+                        if (self.index != self.buffer.len) {
+                            continue :state .invalid;
+                        } else return .{
+                            .tag = .eof,
+                            .loc = .{
+                                .start = self.index,
+                                .end = self.index,
+                            },
+                        };
                     },
-                    else => {
-                        state = .doc_comment;
-                        result.tag = .doc_comment;
-                        self.checkLiteralCharacter();
-                    },
-                },
-                .line_comment => switch (c) {
-                    0 => break,
                     '\n' => {
-                        state = .start;
-                        result.loc.start = self.index + 1;
+                        self.index += 1;
+                        result.loc.start = self.index;
+                        continue :state .start;
                     },
-                    '\t', '\r' => {},
-                    else => self.checkLiteralCharacter(),
+                    '\r' => continue :state .expect_newline,
+                    0x01...0x09, 0x0b...0x0c, 0x0e...0x1f, 0x7f => {
+                        continue :state .invalid;
+                    },
+                    else => continue :state .line_comment,
+                }
+            },
+            .doc_comment => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    0, '\n' => {},
+                    '\r' => if (self.buffer[self.index + 1] != '\n') {
+                        continue :state .invalid;
+                    },
+                    0x01...0x09, 0x0b...0x0c, 0x0e...0x1f, 0x7f => {
+                        continue :state .invalid;
+                    },
+                    else => continue :state .doc_comment,
+                }
+            },
+            .int => switch (self.buffer[self.index]) {
+                '.' => continue :state .int_period,
+                '_', 'a'...'d', 'f'...'o', 'q'...'z', 'A'...'D', 'F'...'O', 'Q'...'Z', '0'...'9' => {
+                    self.index += 1;
+                    continue :state .int;
                 },
-                .doc_comment => switch (c) {
-                    0, '\n' => break,
-                    '\t', '\r' => {},
-                    else => self.checkLiteralCharacter(),
+                'e', 'E', 'p', 'P' => {
+                    continue :state .int_exponent;
                 },
-                .zero => switch (c) {
-                    'b' => {
-                        state = .int_literal_bin_no_underscore;
+                else => {},
+            },
+            .int_exponent => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    '-', '+' => {
+                        self.index += 1;
+                        continue :state .float;
                     },
-                    'o' => {
-                        state = .int_literal_oct_no_underscore;
+                    else => continue :state .int,
+                }
+            },
+            .int_period => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    '_', 'a'...'d', 'f'...'o', 'q'...'z', 'A'...'D', 'F'...'O', 'Q'...'Z', '0'...'9' => {
+                        self.index += 1;
+                        continue :state .float;
                     },
-                    'x' => {
-                        state = .int_literal_hex_no_underscore;
+                    'e', 'E', 'p', 'P' => {
+                        continue :state .float_exponent;
                     },
-                    '0'...'9', '_', '.', 'e', 'E' => {
-                        // reinterpret as a decimal number
-                        self.index -= 1;
-                        state = .int_literal_dec;
-                    },
-                    'a', 'c', 'd', 'f'...'n', 'p'...'w', 'y', 'z', 'A'...'D', 'F'...'Z' => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    else => break,
+                    else => self.index -= 1,
+                }
+            },
+            .float => switch (self.buffer[self.index]) {
+                '_', 'a'...'d', 'f'...'o', 'q'...'z', 'A'...'D', 'F'...'O', 'Q'...'Z', '0'...'9' => {
+                    self.index += 1;
+                    continue :state .float;
                 },
-                .int_literal_bin_no_underscore => switch (c) {
-                    '0'...'1' => {
-                        state = .int_literal_bin;
-                    },
-                    else => {
-                        result.tag = .invalid;
-                        break;
-                    },
+                'e', 'E', 'p', 'P' => {
+                    continue :state .float_exponent;
                 },
-                .int_literal_bin => switch (c) {
-                    '_' => {
-                        state = .int_literal_bin_no_underscore;
+                else => {},
+            },
+            .float_exponent => {
+                self.index += 1;
+                switch (self.buffer[self.index]) {
+                    '-', '+' => {
+                        self.index += 1;
+                        continue :state .float;
                     },
-                    '0'...'1' => {},
-                    '2'...'9', 'a'...'z', 'A'...'Z' => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    else => break,
-                },
-                .int_literal_oct_no_underscore => switch (c) {
-                    '0'...'7' => {
-                        state = .int_literal_oct;
-                    },
-                    else => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                },
-                .int_literal_oct => switch (c) {
-                    '_' => {
-                        state = .int_literal_oct_no_underscore;
-                    },
-                    '0'...'7' => {},
-                    '8', '9', 'a'...'z', 'A'...'Z' => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    else => break,
-                },
-                .int_literal_dec_no_underscore => switch (c) {
-                    '0'...'9' => {
-                        state = .int_literal_dec;
-                    },
-                    else => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                },
-                .int_literal_dec => switch (c) {
-                    '_' => {
-                        state = .int_literal_dec_no_underscore;
-                    },
-                    '.' => {
-                        state = .num_dot_dec;
-                        result.tag = .invalid;
-                    },
-                    'e', 'E' => {
-                        state = .float_exponent_unsigned;
-                        result.tag = .float_literal;
-                    },
-                    '0'...'9' => {},
-                    'a'...'d', 'f'...'z', 'A'...'D', 'F'...'Z' => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    else => break,
-                },
-                .int_literal_hex_no_underscore => switch (c) {
-                    '0'...'9', 'a'...'f', 'A'...'F' => {
-                        state = .int_literal_hex;
-                    },
-                    else => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                },
-                .int_literal_hex => switch (c) {
-                    '_' => {
-                        state = .int_literal_hex_no_underscore;
-                    },
-                    '.' => {
-                        state = .num_dot_hex;
-                        result.tag = .invalid;
-                    },
-                    'p', 'P' => {
-                        state = .float_exponent_unsigned;
-                        result.tag = .float_literal;
-                    },
-                    '0'...'9', 'a'...'f', 'A'...'F' => {},
-                    'g'...'o', 'q'...'z', 'G'...'O', 'Q'...'Z' => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    else => break,
-                },
-                .num_dot_dec => switch (c) {
-                    '.' => {
-                        result.tag = .integer_literal;
-                        self.index -= 1;
-                        state = .start;
-                        break;
-                    },
-                    '0'...'9' => {
-                        result.tag = .float_literal;
-                        state = .float_fraction_dec;
-                    },
-                    '_', 'a'...'z', 'A'...'Z' => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    else => break,
-                },
-                .num_dot_hex => switch (c) {
-                    '.' => {
-                        result.tag = .integer_literal;
-                        self.index -= 1;
-                        state = .start;
-                        break;
-                    },
-                    '0'...'9', 'a'...'f', 'A'...'F' => {
-                        result.tag = .float_literal;
-                        state = .float_fraction_hex;
-                    },
-                    '_', 'g'...'z', 'G'...'Z' => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    else => break,
-                },
-                .float_fraction_dec_no_underscore => switch (c) {
-                    '0'...'9' => {
-                        state = .float_fraction_dec;
-                    },
-                    else => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                },
-                .float_fraction_dec => switch (c) {
-                    '_' => {
-                        state = .float_fraction_dec_no_underscore;
-                    },
-                    'e', 'E' => {
-                        state = .float_exponent_unsigned;
-                    },
-                    '0'...'9' => {},
-                    'a'...'d', 'f'...'z', 'A'...'D', 'F'...'Z' => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    else => break,
-                },
-                .float_fraction_hex_no_underscore => switch (c) {
-                    '0'...'9', 'a'...'f', 'A'...'F' => {
-                        state = .float_fraction_hex;
-                    },
-                    else => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                },
-                .float_fraction_hex => switch (c) {
-                    '_' => {
-                        state = .float_fraction_hex_no_underscore;
-                    },
-                    'p', 'P' => {
-                        state = .float_exponent_unsigned;
-                    },
-                    '0'...'9', 'a'...'f', 'A'...'F' => {},
-                    'g'...'o', 'q'...'z', 'G'...'O', 'Q'...'Z' => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    else => break,
-                },
-                .float_exponent_unsigned => switch (c) {
-                    '+', '-' => {
-                        state = .float_exponent_num_no_underscore;
-                    },
-                    else => {
-                        // reinterpret as a normal exponent number
-                        self.index -= 1;
-                        state = .float_exponent_num_no_underscore;
-                    },
-                },
-                .float_exponent_num_no_underscore => switch (c) {
-                    '0'...'9' => {
-                        state = .float_exponent_num;
-                    },
-                    else => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                },
-                .float_exponent_num => switch (c) {
-                    '_' => {
-                        state = .float_exponent_num_no_underscore;
-                    },
-                    '0'...'9' => {},
-                    'a'...'z', 'A'...'Z' => {
-                        result.tag = .invalid;
-                        break;
-                    },
-                    else => break,
-                },
-            }
-        }
-
-        if (result.tag == .eof) {
-            if (self.pending_invalid_token) |token| {
-                self.pending_invalid_token = null;
-                return token;
-            }
-            result.loc.start = self.index;
+                    else => continue :state .float,
+                }
+            },
         }
 
         result.loc.end = self.index;
         return result;
     }
-
-    fn checkLiteralCharacter(self: *Tokenizer) void {
-        if (self.pending_invalid_token != null) return;
-        const invalid_length = self.getInvalidCharacterLength();
-        if (invalid_length == 0) return;
-        self.pending_invalid_token = .{
-            .tag = .invalid,
-            .loc = .{
-                .start = self.index,
-                .end = self.index + invalid_length,
-            },
-        };
-    }
-
-    fn getInvalidCharacterLength(self: *Tokenizer) u3 {
-        const c0 = self.buffer[self.index];
-        if (c0 < 0x80) {
-            if (c0 < 0x20 or c0 == 0x7f) {
-                // ascii control codes are never allowed
-                // (note that \n was checked before we got here)
-                return 1;
-            }
-            // looks fine to me.
-            return 0;
-        } else {
-            // check utf8-encoded character.
-            const length = std.unicode.utf8ByteSequenceLength(c0) catch return 1;
-            if (self.index + length > self.buffer.len) {
-                return @intCast(u3, self.buffer.len - self.index);
-            }
-            const bytes = self.buffer[self.index .. self.index + length];
-            switch (length) {
-                2 => {
-                    const value = std.unicode.utf8Decode2(bytes) catch return length;
-                    if (value == 0x85) return length; // U+0085 (NEL)
-                },
-                3 => {
-                    const value = std.unicode.utf8Decode3(bytes) catch return length;
-                    if (value == 0x2028) return length; // U+2028 (LS)
-                    if (value == 0x2029) return length; // U+2029 (PS)
-                },
-                4 => {
-                    _ = std.unicode.utf8Decode4(bytes) catch return length;
-                },
-                else => unreachable,
-            }
-            self.index += length - 1;
-            return 0;
-        }
-    }
 };
 
-test "tokenizer" {
-    try testTokenize("test", &.{.keyword_test});
+test "keywords" {
+    try testTokenize("test const else", &.{ .keyword_test, .keyword_const, .keyword_else });
 }
 
 test "line comment followed by top-level comptime" {
@@ -1470,7 +1123,7 @@ test "line comment followed by top-level comptime" {
     });
 }
 
-test "tokenizer - unknown length pointer and then c pointer" {
+test "unknown length pointer and then c pointer" {
     try testTokenize(
         \\[*]u8
         \\[*c]u8
@@ -1487,16 +1140,30 @@ test "tokenizer - unknown length pointer and then c pointer" {
     });
 }
 
-test "tokenizer - code point literal with hex escape" {
+test "code point literal with hex escape" {
     try testTokenize(
         \\'\x1b'
     , &.{.char_literal});
     try testTokenize(
         \\'\x1'
+    , &.{.char_literal});
+}
+
+test "newline in char literal" {
+    try testTokenize(
+        \\'
+        \\'
     , &.{ .invalid, .invalid });
 }
 
-test "tokenizer - code point literal with unicode escapes" {
+test "newline in string literal" {
+    try testTokenize(
+        \\"
+        \\"
+    , &.{ .invalid, .invalid });
+}
+
+test "code point literal with unicode escapes" {
     // Valid unicode escapes
     try testTokenize(
         \\'\u{3}'
@@ -1520,134 +1187,105 @@ test "tokenizer - code point literal with unicode escapes" {
     // Invalid unicode escapes
     try testTokenize(
         \\'\u'
-    , &.{.invalid});
+    , &.{.char_literal});
     try testTokenize(
         \\'\u{{'
-    , &.{ .invalid, .invalid });
+    , &.{.char_literal});
     try testTokenize(
         \\'\u{}'
     , &.{.char_literal});
     try testTokenize(
         \\'\u{s}'
-    , &.{ .invalid, .invalid });
+    , &.{.char_literal});
     try testTokenize(
         \\'\u{2z}'
-    , &.{ .invalid, .invalid });
+    , &.{.char_literal});
     try testTokenize(
         \\'\u{4a'
-    , &.{.invalid});
+    , &.{.char_literal});
 
     // Test old-style unicode literals
     try testTokenize(
         \\'\u0333'
-    , &.{ .invalid, .invalid });
+    , &.{.char_literal});
     try testTokenize(
         \\'\U0333'
-    , &.{ .invalid, .integer_literal, .invalid });
+    , &.{.char_literal});
 }
 
-test "tokenizer - code point literal with unicode code point" {
+test "code point literal with unicode code point" {
     try testTokenize(
         \\'💩'
     , &.{.char_literal});
 }
 
-test "tokenizer - float literal e exponent" {
+test "float literal e exponent" {
     try testTokenize("a = 4.94065645841246544177e-324;\n", &.{
         .identifier,
         .equal,
-        .float_literal,
+        .number_literal,
         .semicolon,
     });
 }
 
-test "tokenizer - float literal p exponent" {
+test "float literal p exponent" {
     try testTokenize("a = 0x1.a827999fcef32p+1022;\n", &.{
         .identifier,
         .equal,
-        .float_literal,
+        .number_literal,
         .semicolon,
     });
 }
 
-test "tokenizer - chars" {
+test "chars" {
     try testTokenize("'c'", &.{.char_literal});
 }
 
-test "tokenizer - invalid token characters" {
+test "invalid token characters" {
     try testTokenize("#", &.{.invalid});
     try testTokenize("`", &.{.invalid});
     try testTokenize("'c", &.{.invalid});
     try testTokenize("'", &.{.invalid});
-    try testTokenize("''", &.{ .invalid, .invalid });
+    try testTokenize("''", &.{.char_literal});
+    try testTokenize("'\n'", &.{ .invalid, .invalid });
 }
 
-test "tokenizer - invalid literal/comment characters" {
-    try testTokenize("\"\x00\"", &.{
-        .string_literal,
-        .invalid,
-    });
-    try testTokenize("//\x00", &.{
-        .invalid,
-    });
-    try testTokenize("//\x1f", &.{
-        .invalid,
-    });
-    try testTokenize("//\x7f", &.{
-        .invalid,
-    });
+test "invalid literal/comment characters" {
+    try testTokenize("\"\x00\"", &.{.invalid});
+    try testTokenize("`\x00`", &.{.invalid});
+    try testTokenize("//\x00", &.{.invalid});
+    try testTokenize("//\x1f", &.{.invalid});
+    try testTokenize("//\x7f", &.{.invalid});
 }
 
-test "tokenizer - utf8" {
+test "utf8" {
     try testTokenize("//\xc2\x80", &.{});
     try testTokenize("//\xf4\x8f\xbf\xbf", &.{});
 }
 
-test "tokenizer - invalid utf8" {
-    try testTokenize("//\x80", &.{
-        .invalid,
-    });
-    try testTokenize("//\xbf", &.{
-        .invalid,
-    });
-    try testTokenize("//\xf8", &.{
-        .invalid,
-    });
-    try testTokenize("//\xff", &.{
-        .invalid,
-    });
-    try testTokenize("//\xc2\xc0", &.{
-        .invalid,
-    });
-    try testTokenize("//\xe0", &.{
-        .invalid,
-    });
-    try testTokenize("//\xf0", &.{
-        .invalid,
-    });
-    try testTokenize("//\xf0\x90\x80\xc0", &.{
-        .invalid,
-    });
+test "invalid utf8" {
+    try testTokenize("//\x80", &.{});
+    try testTokenize("//\xbf", &.{});
+    try testTokenize("//\xf8", &.{});
+    try testTokenize("//\xff", &.{});
+    try testTokenize("//\xc2\xc0", &.{});
+    try testTokenize("//\xe0", &.{});
+    try testTokenize("//\xf0", &.{});
+    try testTokenize("//\xf0\x90\x80\xc0", &.{});
 }
 
-test "tokenizer - illegal unicode codepoints" {
+test "illegal unicode codepoints" {
     // unicode newline characters.U+0085, U+2028, U+2029
     try testTokenize("//\xc2\x84", &.{});
-    try testTokenize("//\xc2\x85", &.{
-        .invalid,
-    });
+    try testTokenize("//\xc2\x85", &.{});
     try testTokenize("//\xc2\x86", &.{});
     try testTokenize("//\xe2\x80\xa7", &.{});
-    try testTokenize("//\xe2\x80\xa8", &.{
-        .invalid,
-    });
-    try testTokenize("//\xe2\x80\xa9", &.{
-        .invalid,
-    });
+    try testTokenize("//\xe2\x80\xa8", &.{});
+    try testTokenize("//\xe2\x80\xa9", &.{});
     try testTokenize("//\xe2\x80\xaa", &.{});
 }
 
-test "tokenizer - string identifier and builtin fns" {
+test "string identifier and builtin fns" {
     try testTokenize(
         \\const @"if" = @import("std");
     , &.{
@@ -1662,38 +1300,14 @@ test "tokenizer - string identifier and builtin fns" {
     });
 }
 
-test "tokenizer - multiline string literal with literal tab" {
-    try testTokenize(
-        \\\\foo	bar
-    , &.{
-        .multiline_string_literal_line,
-    });
-}
-
-test "tokenizer - comments with literal tab" {
-    try testTokenize(
-        \\//foo	bar
-        \\//!foo	bar
-        \\///foo	bar
-        \\//	foo
-        \\///	foo
-        \\///	/foo
-    , &.{
-        .container_doc_comment,
-        .doc_comment,
-        .doc_comment,
-        .doc_comment,
-    });
-}
-
-test "tokenizer - pipe and then invalid" {
+test "pipe and then invalid" {
     try testTokenize("||=", &.{
         .pipe_pipe,
         .equal,
     });
 }
 
-test "tokenizer - line comment and doc comment" {
+test "line comment and doc comment" {
     try testTokenize("//", &.{});
     try testTokenize("// a / b", &.{});
     try testTokenize("// /", &.{});
@@ -1704,7 +1318,7 @@ test "tokenizer - line comment and doc comment" {
     try testTokenize("//!!", &.{.container_doc_comment});
 }
 
-test "tokenizer - line comment followed by identifier" {
+test "line comment followed by identifier" {
     try testTokenize(
         \\    Unexpected,
         \\    // another
@@ -1717,7 +1331,7 @@ test "tokenizer - line comment followed by identifier" {
     });
 }
 
-test "tokenizer - UTF-8 BOM is recognized and skipped" {
+test "UTF-8 BOM is recognized and skipped" {
     try testTokenize("\xEF\xBB\xBFa;\n", &.{
         .identifier,
         .semicolon,
@@ -1729,7 +1343,7 @@ test "correctly parse pointer assignment" {
         .identifier,
         .period_asterisk,
         .equal,
-        .integer_literal,
+        .number_literal,
         .semicolon,
     });
 }
@@ -1739,7 +1353,7 @@ test "correctly parse pointer dereference followed by asterisk" {
         .string_literal,
         .period_asterisk,
         .asterisk_asterisk,
-        .integer_literal,
+        .number_literal,
     });
 
     try testTokenize("(\"b\".*)** 10", &.{
@@ -1748,274 +1362,274 @@ test "correctly parse pointer dereference followed by asterisk" {
         .period_asterisk,
         .r_paren,
         .asterisk_asterisk,
-        .integer_literal,
+        .number_literal,
     });
 
     try testTokenize("\"b\".*** 10", &.{
         .string_literal,
         .invalid_periodasterisks,
         .asterisk_asterisk,
-        .integer_literal,
+        .number_literal,
     });
 }
 
-test "tokenizer - range literals" {
-    try testTokenize("0...9", &.{ .integer_literal, .ellipsis3, .integer_literal });
+test "range literals" {
+    try testTokenize("0...9", &.{ .number_literal, .ellipsis3, .number_literal });
     try testTokenize("'0'...'9'", &.{ .char_literal, .ellipsis3, .char_literal });
-    try testTokenize("0x00...0x09", &.{ .integer_literal, .ellipsis3, .integer_literal });
-    try testTokenize("0b00...0b11", &.{ .integer_literal, .ellipsis3, .integer_literal });
-    try testTokenize("0o00...0o11", &.{ .integer_literal, .ellipsis3, .integer_literal });
+    try testTokenize("0x00...0x09", &.{ .number_literal, .ellipsis3, .number_literal });
+    try testTokenize("0b00...0b11", &.{ .number_literal, .ellipsis3, .number_literal });
+    try testTokenize("0o00...0o11", &.{ .number_literal, .ellipsis3, .number_literal });
 }
 
-test "tokenizer - number literals decimal" {
-    try testTokenize("0", &.{.integer_literal});
-    try testTokenize("1", &.{.integer_literal});
-    try testTokenize("2", &.{.integer_literal});
-    try testTokenize("3", &.{.integer_literal});
-    try testTokenize("4", &.{.integer_literal});
-    try testTokenize("5", &.{.integer_literal});
-    try testTokenize("6", &.{.integer_literal});
-    try testTokenize("7", &.{.integer_literal});
-    try testTokenize("8", &.{.integer_literal});
-    try testTokenize("9", &.{.integer_literal});
-    try testTokenize("1..", &.{ .integer_literal, .ellipsis2 });
-    try testTokenize("0a", &.{ .invalid, .identifier });
-    try testTokenize("9b", &.{ .invalid, .identifier });
-    try testTokenize("1z", &.{ .invalid, .identifier });
-    try testTokenize("1z_1", &.{ .invalid, .identifier });
-    try testTokenize("9z3", &.{ .invalid, .identifier });
+test "number literals decimal" {
+    try testTokenize("0", &.{.number_literal});
+    try testTokenize("1", &.{.number_literal});
+    try testTokenize("2", &.{.number_literal});
+    try testTokenize("3", &.{.number_literal});
+    try testTokenize("4", &.{.number_literal});
+    try testTokenize("5", &.{.number_literal});
+    try testTokenize("6", &.{.number_literal});
+    try testTokenize("7", &.{.number_literal});
+    try testTokenize("8", &.{.number_literal});
+    try testTokenize("9", &.{.number_literal});
+    try testTokenize("1..", &.{ .number_literal, .ellipsis2 });
+    try testTokenize("0a", &.{.number_literal});
+    try testTokenize("9b", &.{.number_literal});
+    try testTokenize("1z", &.{.number_literal});
+    try testTokenize("1z_1", &.{.number_literal});
+    try testTokenize("9z3", &.{.number_literal});
 
-    try testTokenize("0_0", &.{.integer_literal});
-    try testTokenize("0001", &.{.integer_literal});
-    try testTokenize("01234567890", &.{.integer_literal});
-    try testTokenize("012_345_6789_0", &.{.integer_literal});
-    try testTokenize("0_1_2_3_4_5_6_7_8_9_0", &.{.integer_literal});
+    try testTokenize("0_0", &.{.number_literal});
+    try testTokenize("0001", &.{.number_literal});
+    try testTokenize("01234567890", &.{.number_literal});
+    try testTokenize("012_345_6789_0", &.{.number_literal});
+    try testTokenize("0_1_2_3_4_5_6_7_8_9_0", &.{.number_literal});
 
-    try testTokenize("00_", &.{.invalid});
-    try testTokenize("0_0_", &.{.invalid});
-    try testTokenize("0__0", &.{ .invalid, .identifier });
-    try testTokenize("0_0f", &.{ .invalid, .identifier });
-    try testTokenize("0_0_f", &.{ .invalid, .identifier });
-    try testTokenize("0_0_f_00", &.{ .invalid, .identifier });
-    try testTokenize("1_,", &.{ .invalid, .comma });
+    try testTokenize("00_", &.{.number_literal});
+    try testTokenize("0_0_", &.{.number_literal});
+    try testTokenize("0__0", &.{.number_literal});
+    try testTokenize("0_0f", &.{.number_literal});
+    try testTokenize("0_0_f", &.{.number_literal});
+    try testTokenize("0_0_f_00", &.{.number_literal});
+    try testTokenize("1_,", &.{ .number_literal, .comma });
 
-    try testTokenize("0.0", &.{.float_literal});
-    try testTokenize("1.0", &.{.float_literal});
-    try testTokenize("10.0", &.{.float_literal});
-    try testTokenize("0e0", &.{.float_literal});
-    try testTokenize("1e0", &.{.float_literal});
-    try testTokenize("1e100", &.{.float_literal});
-    try testTokenize("1.0e100", &.{.float_literal});
-    try testTokenize("1.0e+100", &.{.float_literal});
-    try testTokenize("1.0e-100", &.{.float_literal});
-    try testTokenize("1_0_0_0.0_0_0_0_0_1e1_0_0_0", &.{.float_literal});
+    try testTokenize("0.0", &.{.number_literal});
+    try testTokenize("1.0", &.{.number_literal});
+    try testTokenize("10.0", &.{.number_literal});
+    try testTokenize("0e0", &.{.number_literal});
+    try testTokenize("1e0", &.{.number_literal});
+    try testTokenize("1e100", &.{.number_literal});
+    try testTokenize("1.0e100", &.{.number_literal});
+    try testTokenize("1.0e+100", &.{.number_literal});
+    try testTokenize("1.0e-100", &.{.number_literal});
+    try testTokenize("1_0_0_0.0_0_0_0_0_1e1_0_0_0", &.{.number_literal});
 
-    try testTokenize("1.", &.{.invalid});
-    try testTokenize("1e", &.{.invalid});
-    try testTokenize("1.e100", &.{ .invalid, .identifier });
-    try testTokenize("1.0e1f0", &.{ .invalid, .identifier });
-    try testTokenize("1.0p100", &.{ .invalid, .identifier });
-    try testTokenize("1.0p-100", &.{ .invalid, .identifier, .minus, .integer_literal });
-    try testTokenize("1.0p1f0", &.{ .invalid, .identifier });
-    try testTokenize("1.0_,", &.{ .invalid, .comma });
-    try testTokenize("1_.0", &.{ .invalid, .period, .integer_literal });
-    try testTokenize("1._", &.{ .invalid, .identifier });
-    try testTokenize("1.a", &.{ .invalid, .identifier });
-    try testTokenize("1.z", &.{ .invalid, .identifier });
-    try testTokenize("1._0", &.{ .invalid, .identifier });
-    try testTokenize("1.+", &.{ .invalid, .plus });
-    try testTokenize("1._+", &.{ .invalid, .identifier, .plus });
-    try testTokenize("1._e", &.{ .invalid, .identifier });
-    try testTokenize("1.0e", &.{.invalid});
-    try testTokenize("1.0e,", &.{ .invalid, .comma });
-    try testTokenize("1.0e_", &.{ .invalid, .identifier });
-    try testTokenize("1.0e+_", &.{ .invalid, .identifier });
-    try testTokenize("1.0e-_", &.{ .invalid, .identifier });
-    try testTokenize("1.0e0_+", &.{ .invalid, .plus });
+    try testTokenize("1.", &.{ .number_literal, .period });
+    try testTokenize("1e", &.{.number_literal});
+    try testTokenize("1.e100", &.{.number_literal});
+    try testTokenize("1.0e1f0", &.{.number_literal});
+    try testTokenize("1.0p100", &.{.number_literal});
+    try testTokenize("1.0p-100", &.{.number_literal});
+    try testTokenize("1.0p1f0", &.{.number_literal});
+    try testTokenize("1.0_,", &.{ .number_literal, .comma });
+    try testTokenize("1_.0", &.{.number_literal});
+    try testTokenize("1._", &.{.number_literal});
+    try testTokenize("1.a", &.{.number_literal});
+    try testTokenize("1.z", &.{.number_literal});
+    try testTokenize("1._0", &.{.number_literal});
+    try testTokenize("1.+", &.{ .number_literal, .period, .plus });
+    try testTokenize("1._+", &.{ .number_literal, .plus });
+    try testTokenize("1._e", &.{.number_literal});
+    try testTokenize("1.0e", &.{.number_literal});
+    try testTokenize("1.0e,", &.{ .number_literal, .comma });
+    try testTokenize("1.0e_", &.{.number_literal});
+    try testTokenize("1.0e+_", &.{.number_literal});
+    try testTokenize("1.0e-_", &.{.number_literal});
+    try testTokenize("1.0e0_+", &.{ .number_literal, .plus });
 }
 
-test "tokenizer - number literals binary" {
-    try testTokenize("0b0", &.{.integer_literal});
-    try testTokenize("0b1", &.{.integer_literal});
-    try testTokenize("0b2", &.{ .invalid, .integer_literal });
-    try testTokenize("0b3", &.{ .invalid, .integer_literal });
-    try testTokenize("0b4", &.{ .invalid, .integer_literal });
-    try testTokenize("0b5", &.{ .invalid, .integer_literal });
-    try testTokenize("0b6", &.{ .invalid, .integer_literal });
-    try testTokenize("0b7", &.{ .invalid, .integer_literal });
-    try testTokenize("0b8", &.{ .invalid, .integer_literal });
-    try testTokenize("0b9", &.{ .invalid, .integer_literal });
-    try testTokenize("0ba", &.{ .invalid, .identifier });
-    try testTokenize("0bb", &.{ .invalid, .identifier });
-    try testTokenize("0bc", &.{ .invalid, .identifier });
-    try testTokenize("0bd", &.{ .invalid, .identifier });
-    try testTokenize("0be", &.{ .invalid, .identifier });
-    try testTokenize("0bf", &.{ .invalid, .identifier });
-    try testTokenize("0bz", &.{ .invalid, .identifier });
+test "number literals binary" {
+    try testTokenize("0b0", &.{.number_literal});
+    try testTokenize("0b1", &.{.number_literal});
+    try testTokenize("0b2", &.{.number_literal});
+    try testTokenize("0b3", &.{.number_literal});
+    try testTokenize("0b4", &.{.number_literal});
+    try testTokenize("0b5", &.{.number_literal});
+    try testTokenize("0b6", &.{.number_literal});
+    try testTokenize("0b7", &.{.number_literal});
+    try testTokenize("0b8", &.{.number_literal});
+    try testTokenize("0b9", &.{.number_literal});
+    try testTokenize("0ba", &.{.number_literal});
+    try testTokenize("0bb", &.{.number_literal});
+    try testTokenize("0bc", &.{.number_literal});
+    try testTokenize("0bd", &.{.number_literal});
+    try testTokenize("0be", &.{.number_literal});
+    try testTokenize("0bf", &.{.number_literal});
+    try testTokenize("0bz", &.{.number_literal});
 
-    try testTokenize("0b0000_0000", &.{.integer_literal});
-    try testTokenize("0b1111_1111", &.{.integer_literal});
-    try testTokenize("0b10_10_10_10", &.{.integer_literal});
-    try testTokenize("0b0_1_0_1_0_1_0_1", &.{.integer_literal});
-    try testTokenize("0b1.", &.{ .integer_literal, .period });
-    try testTokenize("0b1.0", &.{ .integer_literal, .period, .integer_literal });
+    try testTokenize("0b0000_0000", &.{.number_literal});
+    try testTokenize("0b1111_1111", &.{.number_literal});
+    try testTokenize("0b10_10_10_10", &.{.number_literal});
+    try testTokenize("0b0_1_0_1_0_1_0_1", &.{.number_literal});
+    try testTokenize("0b1.", &.{ .number_literal, .period });
+    try testTokenize("0b1.0", &.{.number_literal});
 
-    try testTokenize("0B0", &.{ .invalid, .identifier });
-    try testTokenize("0b_", &.{ .invalid, .identifier });
-    try testTokenize("0b_0", &.{ .invalid, .identifier });
-    try testTokenize("0b1_", &.{.invalid});
-    try testTokenize("0b0__1", &.{ .invalid, .identifier });
-    try testTokenize("0b0_1_", &.{.invalid});
-    try testTokenize("0b1e", &.{ .invalid, .identifier });
-    try testTokenize("0b1p", &.{ .invalid, .identifier });
-    try testTokenize("0b1e0", &.{ .invalid, .identifier });
-    try testTokenize("0b1p0", &.{ .invalid, .identifier });
-    try testTokenize("0b1_,", &.{ .invalid, .comma });
+    try testTokenize("0B0", &.{.number_literal});
+    try testTokenize("0b_", &.{.number_literal});
+    try testTokenize("0b_0", &.{.number_literal});
+    try testTokenize("0b1_", &.{.number_literal});
+    try testTokenize("0b0__1", &.{.number_literal});
+    try testTokenize("0b0_1_", &.{.number_literal});
+    try testTokenize("0b1e", &.{.number_literal});
+    try testTokenize("0b1p", &.{.number_literal});
+    try testTokenize("0b1e0", &.{.number_literal});
+    try testTokenize("0b1p0", &.{.number_literal});
+    try testTokenize("0b1_,", &.{ .number_literal, .comma });
 }
 
-test "tokenizer - number literals octal" {
-    try testTokenize("0o0", &.{.integer_literal});
-    try testTokenize("0o1", &.{.integer_literal});
-    try testTokenize("0o2", &.{.integer_literal});
-    try testTokenize("0o3", &.{.integer_literal});
-    try testTokenize("0o4", &.{.integer_literal});
-    try testTokenize("0o5", &.{.integer_literal});
-    try testTokenize("0o6", &.{.integer_literal});
-    try testTokenize("0o7", &.{.integer_literal});
-    try testTokenize("0o8", &.{ .invalid, .integer_literal });
-    try testTokenize("0o9", &.{ .invalid, .integer_literal });
-    try testTokenize("0oa", &.{ .invalid, .identifier });
-    try testTokenize("0ob", &.{ .invalid, .identifier });
-    try testTokenize("0oc", &.{ .invalid, .identifier });
-    try testTokenize("0od", &.{ .invalid, .identifier });
-    try testTokenize("0oe", &.{ .invalid, .identifier });
-    try testTokenize("0of", &.{ .invalid, .identifier });
-    try testTokenize("0oz", &.{ .invalid, .identifier });
+test "number literals octal" {
+    try testTokenize("0o0", &.{.number_literal});
+    try testTokenize("0o1", &.{.number_literal});
+    try testTokenize("0o2", &.{.number_literal});
+    try testTokenize("0o3", &.{.number_literal});
+    try testTokenize("0o4", &.{.number_literal});
+    try testTokenize("0o5", &.{.number_literal});
+    try testTokenize("0o6", &.{.number_literal});
+    try testTokenize("0o7", &.{.number_literal});
+    try testTokenize("0o8", &.{.number_literal});
+    try testTokenize("0o9", &.{.number_literal});
+    try testTokenize("0oa", &.{.number_literal});
+    try testTokenize("0ob", &.{.number_literal});
+    try testTokenize("0oc", &.{.number_literal});
+    try testTokenize("0od", &.{.number_literal});
+    try testTokenize("0oe", &.{.number_literal});
+    try testTokenize("0of", &.{.number_literal});
+    try testTokenize("0oz", &.{.number_literal});
 
-    try testTokenize("0o01234567", &.{.integer_literal});
-    try testTokenize("0o0123_4567", &.{.integer_literal});
-    try testTokenize("0o01_23_45_67", &.{.integer_literal});
-    try testTokenize("0o0_1_2_3_4_5_6_7", &.{.integer_literal});
-    try testTokenize("0o7.", &.{ .integer_literal, .period });
-    try testTokenize("0o7.0", &.{ .integer_literal, .period, .integer_literal });
+    try testTokenize("0o01234567", &.{.number_literal});
+    try testTokenize("0o0123_4567", &.{.number_literal});
+    try testTokenize("0o01_23_45_67", &.{.number_literal});
+    try testTokenize("0o0_1_2_3_4_5_6_7", &.{.number_literal});
+    try testTokenize("0o7.", &.{ .number_literal, .period });
+    try testTokenize("0o7.0", &.{.number_literal});
 
-    try testTokenize("0O0", &.{ .invalid, .identifier });
-    try testTokenize("0o_", &.{ .invalid, .identifier });
-    try testTokenize("0o_0", &.{ .invalid, .identifier });
-    try testTokenize("0o1_", &.{.invalid});
-    try testTokenize("0o0__1", &.{ .invalid, .identifier });
-    try testTokenize("0o0_1_", &.{.invalid});
-    try testTokenize("0o1e", &.{ .invalid, .identifier });
-    try testTokenize("0o1p", &.{ .invalid, .identifier });
-    try testTokenize("0o1e0", &.{ .invalid, .identifier });
-    try testTokenize("0o1p0", &.{ .invalid, .identifier });
-    try testTokenize("0o_,", &.{ .invalid, .identifier, .comma });
+    try testTokenize("0O0", &.{.number_literal});
+    try testTokenize("0o_", &.{.number_literal});
+    try testTokenize("0o_0", &.{.number_literal});
+    try testTokenize("0o1_", &.{.number_literal});
+    try testTokenize("0o0__1", &.{.number_literal});
+    try testTokenize("0o0_1_", &.{.number_literal});
+    try testTokenize("0o1e", &.{.number_literal});
+    try testTokenize("0o1p", &.{.number_literal});
+    try testTokenize("0o1e0", &.{.number_literal});
+    try testTokenize("0o1p0", &.{.number_literal});
+    try testTokenize("0o_,", &.{ .number_literal, .comma });
 }
 
-test "tokenizer - number literals hexadecimal" {
-    try testTokenize("0x0", &.{.integer_literal});
-    try testTokenize("0x1", &.{.integer_literal});
-    try testTokenize("0x2", &.{.integer_literal});
-    try testTokenize("0x3", &.{.integer_literal});
-    try testTokenize("0x4", &.{.integer_literal});
-    try testTokenize("0x5", &.{.integer_literal});
-    try testTokenize("0x6", &.{.integer_literal});
-    try testTokenize("0x7", &.{.integer_literal});
-    try testTokenize("0x8", &.{.integer_literal});
-    try testTokenize("0x9", &.{.integer_literal});
-    try testTokenize("0xa", &.{.integer_literal});
-    try testTokenize("0xb", &.{.integer_literal});
-    try testTokenize("0xc", &.{.integer_literal});
-    try testTokenize("0xd", &.{.integer_literal});
-    try testTokenize("0xe", &.{.integer_literal});
-    try testTokenize("0xf", &.{.integer_literal});
-    try testTokenize("0xA", &.{.integer_literal});
-    try testTokenize("0xB", &.{.integer_literal});
-    try testTokenize("0xC", &.{.integer_literal});
-    try testTokenize("0xD", &.{.integer_literal});
-    try testTokenize("0xE", &.{.integer_literal});
-    try testTokenize("0xF", &.{.integer_literal});
-    try testTokenize("0x0z", &.{ .invalid, .identifier });
-    try testTokenize("0xz", &.{ .invalid, .identifier });
+test "number literals hexadecimal" {
+    try testTokenize("0x0", &.{.number_literal});
+    try testTokenize("0x1", &.{.number_literal});
+    try testTokenize("0x2", &.{.number_literal});
+    try testTokenize("0x3", &.{.number_literal});
+    try testTokenize("0x4", &.{.number_literal});
+    try testTokenize("0x5", &.{.number_literal});
+    try testTokenize("0x6", &.{.number_literal});
+    try testTokenize("0x7", &.{.number_literal});
+    try testTokenize("0x8", &.{.number_literal});
+    try testTokenize("0x9", &.{.number_literal});
+    try testTokenize("0xa", &.{.number_literal});
+    try testTokenize("0xb", &.{.number_literal});
+    try testTokenize("0xc", &.{.number_literal});
+    try testTokenize("0xd", &.{.number_literal});
+    try testTokenize("0xe", &.{.number_literal});
+    try testTokenize("0xf", &.{.number_literal});
+    try testTokenize("0xA", &.{.number_literal});
+    try testTokenize("0xB", &.{.number_literal});
+    try testTokenize("0xC", &.{.number_literal});
+    try testTokenize("0xD", &.{.number_literal});
+    try testTokenize("0xE", &.{.number_literal});
+    try testTokenize("0xF", &.{.number_literal});
+    try testTokenize("0x0z", &.{.number_literal});
+    try testTokenize("0xz", &.{.number_literal});
 
-    try testTokenize("0x0123456789ABCDEF", &.{.integer_literal});
-    try testTokenize("0x0123_4567_89AB_CDEF", &.{.integer_literal});
-    try testTokenize("0x01_23_45_67_89AB_CDE_F", &.{.integer_literal});
-    try testTokenize("0x0_1_2_3_4_5_6_7_8_9_A_B_C_D_E_F", &.{.integer_literal});
+    try testTokenize("0x0123456789ABCDEF", &.{.number_literal});
+    try testTokenize("0x0123_4567_89AB_CDEF", &.{.number_literal});
+    try testTokenize("0x01_23_45_67_89AB_CDE_F", &.{.number_literal});
+    try testTokenize("0x0_1_2_3_4_5_6_7_8_9_A_B_C_D_E_F", &.{.number_literal});
 
-    try testTokenize("0X0", &.{ .invalid, .identifier });
-    try testTokenize("0x_", &.{ .invalid, .identifier });
-    try testTokenize("0x_1", &.{ .invalid, .identifier });
-    try testTokenize("0x1_", &.{.invalid});
-    try testTokenize("0x0__1", &.{ .invalid, .identifier });
-    try testTokenize("0x0_1_", &.{.invalid});
-    try testTokenize("0x_,", &.{ .invalid, .identifier, .comma });
+    try testTokenize("0X0", &.{.number_literal});
+    try testTokenize("0x_", &.{.number_literal});
+    try testTokenize("0x_1", &.{.number_literal});
+    try testTokenize("0x1_", &.{.number_literal});
+    try testTokenize("0x0__1", &.{.number_literal});
+    try testTokenize("0x0_1_", &.{.number_literal});
+    try testTokenize("0x_,", &.{ .number_literal, .comma });
 
-    try testTokenize("0x1.0", &.{.float_literal});
-    try testTokenize("0xF.0", &.{.float_literal});
-    try testTokenize("0xF.F", &.{.float_literal});
-    try testTokenize("0xF.Fp0", &.{.float_literal});
-    try testTokenize("0xF.FP0", &.{.float_literal});
-    try testTokenize("0x1p0", &.{.float_literal});
-    try testTokenize("0xfp0", &.{.float_literal});
-    try testTokenize("0x1.0+0xF.0", &.{ .float_literal, .plus, .float_literal });
+    try testTokenize("0x1.0", &.{.number_literal});
+    try testTokenize("0xF.0", &.{.number_literal});
+    try testTokenize("0xF.F", &.{.number_literal});
+    try testTokenize("0xF.Fp0", &.{.number_literal});
+    try testTokenize("0xF.FP0", &.{.number_literal});
+    try testTokenize("0x1p0", &.{.number_literal});
+    try testTokenize("0xfp0", &.{.number_literal});
+    try testTokenize("0x1.0+0xF.0", &.{ .number_literal, .plus, .number_literal });
 
-    try testTokenize("0x1.", &.{.invalid});
-    try testTokenize("0xF.", &.{.invalid});
-    try testTokenize("0x1.+0xF.", &.{ .invalid, .plus, .invalid });
-    try testTokenize("0xff.p10", &.{ .invalid, .identifier });
+    try testTokenize("0x1.", &.{ .number_literal, .period });
+    try testTokenize("0xF.", &.{ .number_literal, .period });
+    try testTokenize("0x1.+0xF.", &.{ .number_literal, .period, .plus, .number_literal, .period });
+    try testTokenize("0xff.p10", &.{.number_literal});
 
-    try testTokenize("0x0123456.789ABCDEF", &.{.float_literal});
-    try testTokenize("0x0_123_456.789_ABC_DEF", &.{.float_literal});
-    try testTokenize("0x0_1_2_3_4_5_6.7_8_9_A_B_C_D_E_F", &.{.float_literal});
-    try testTokenize("0x0p0", &.{.float_literal});
-    try testTokenize("0x0.0p0", &.{.float_literal});
-    try testTokenize("0xff.ffp10", &.{.float_literal});
-    try testTokenize("0xff.ffP10", &.{.float_literal});
-    try testTokenize("0xffp10", &.{.float_literal});
-    try testTokenize("0xff_ff.ff_ffp1_0_0_0", &.{.float_literal});
-    try testTokenize("0xf_f_f_f.f_f_f_fp+1_000", &.{.float_literal});
-    try testTokenize("0xf_f_f_f.f_f_f_fp-1_00_0", &.{.float_literal});
+    try testTokenize("0x0123456.789ABCDEF", &.{.number_literal});
+    try testTokenize("0x0_123_456.789_ABC_DEF", &.{.number_literal});
+    try testTokenize("0x0_1_2_3_4_5_6.7_8_9_A_B_C_D_E_F", &.{.number_literal});
+    try testTokenize("0x0p0", &.{.number_literal});
+    try testTokenize("0x0.0p0", &.{.number_literal});
+    try testTokenize("0xff.ffp10", &.{.number_literal});
+    try testTokenize("0xff.ffP10", &.{.number_literal});
+    try testTokenize("0xffp10", &.{.number_literal});
+    try testTokenize("0xff_ff.ff_ffp1_0_0_0", &.{.number_literal});
+    try testTokenize("0xf_f_f_f.f_f_f_fp+1_000", &.{.number_literal});
+    try testTokenize("0xf_f_f_f.f_f_f_fp-1_00_0", &.{.number_literal});
 
-    try testTokenize("0x1e", &.{.integer_literal});
-    try testTokenize("0x1e0", &.{.integer_literal});
-    try testTokenize("0x1p", &.{.invalid});
-    try testTokenize("0xfp0z1", &.{ .invalid, .identifier });
-    try testTokenize("0xff.ffpff", &.{ .invalid, .identifier });
-    try testTokenize("0x0.p", &.{ .invalid, .identifier });
-    try testTokenize("0x0.z", &.{ .invalid, .identifier });
-    try testTokenize("0x0._", &.{ .invalid, .identifier });
-    try testTokenize("0x0_.0", &.{ .invalid, .period, .integer_literal });
-    try testTokenize("0x0_.0.0", &.{ .invalid, .period, .float_literal });
-    try testTokenize("0x0._0", &.{ .invalid, .identifier });
-    try testTokenize("0x0.0_", &.{.invalid});
-    try testTokenize("0x0_p0", &.{ .invalid, .identifier });
-    try testTokenize("0x0_.p0", &.{ .invalid, .period, .identifier });
-    try testTokenize("0x0._p0", &.{ .invalid, .identifier });
-    try testTokenize("0x0.0_p0", &.{ .invalid, .identifier });
-    try testTokenize("0x0._0p0", &.{ .invalid, .identifier });
-    try testTokenize("0x0.0p_0", &.{ .invalid, .identifier });
-    try testTokenize("0x0.0p+_0", &.{ .invalid, .identifier });
-    try testTokenize("0x0.0p-_0", &.{ .invalid, .identifier });
-    try testTokenize("0x0.0p0_", &.{ .invalid, .eof });
+    try testTokenize("0x1e", &.{.number_literal});
+    try testTokenize("0x1e0", &.{.number_literal});
+    try testTokenize("0x1p", &.{.number_literal});
+    try testTokenize("0xfp0z1", &.{.number_literal});
+    try testTokenize("0xff.ffpff", &.{.number_literal});
+    try testTokenize("0x0.p", &.{.number_literal});
+    try testTokenize("0x0.z", &.{.number_literal});
+    try testTokenize("0x0._", &.{.number_literal});
+    try testTokenize("0x0_.0", &.{.number_literal});
+    try testTokenize("0x0_.0.0", &.{ .number_literal, .period, .number_literal });
+    try testTokenize("0x0._0", &.{.number_literal});
+    try testTokenize("0x0.0_", &.{.number_literal});
+    try testTokenize("0x0_p0", &.{.number_literal});
+    try testTokenize("0x0_.p0", &.{.number_literal});
+    try testTokenize("0x0._p0", &.{.number_literal});
+    try testTokenize("0x0.0_p0", &.{.number_literal});
+    try testTokenize("0x0._0p0", &.{.number_literal});
+    try testTokenize("0x0.0p_0", &.{.number_literal});
+    try testTokenize("0x0.0p+_0", &.{.number_literal});
+    try testTokenize("0x0.0p-_0", &.{.number_literal});
+    try testTokenize("0x0.0p0_", &.{.number_literal});
 }
 
-test "tokenizer - multi line string literal with only 1 backslash" {
+test "multi line string literal with only 1 backslash" {
     try testTokenize("x \\\n;", &.{ .identifier, .invalid, .semicolon });
 }
 
-test "tokenizer - invalid builtin identifiers" {
-    try testTokenize("@()", &.{ .invalid, .l_paren, .r_paren });
-    try testTokenize("@0()", &.{ .invalid, .integer_literal, .l_paren, .r_paren });
+test "invalid builtin identifiers" {
+    try testTokenize("@()", &.{.invalid});
+    try testTokenize("@0()", &.{.invalid});
 }
 
-test "tokenizer - invalid token with unfinished escape right before eof" {
+test "invalid token with unfinished escape right before eof" {
     try testTokenize("\"\\", &.{.invalid});
     try testTokenize("'\\", &.{.invalid});
     try testTokenize("'\\u", &.{.invalid});
 }
 
-test "tokenizer - saturating" {
+test "saturating operators" {
     try testTokenize("<<", &.{.angle_bracket_angle_bracket_left});
     try testTokenize("<<|", &.{.angle_bracket_angle_bracket_left_pipe});
     try testTokenize("<<|=", &.{.angle_bracket_angle_bracket_left_pipe_equal});
@@ -2033,17 +1647,129 @@ test "tokenizer - saturating" {
     try testTokenize("-|=", &.{.minus_pipe_equal});
 }
 
-fn testTokenize(source: [:0]const u8, expected_tokens: []const Token.Tag) !void {
+test "null byte before eof" {
+    try testTokenize("123 \x00 456", &.{ .number_literal, .invalid });
+    try testTokenize("//\x00", &.{.invalid});
+    try testTokenize("\\\\\x00", &.{.invalid});
+    try testTokenize("\x00", &.{.invalid});
+    try testTokenize("// NUL\x00\n", &.{.invalid});
+    try testTokenize("///\x00\n", &.{ .doc_comment, .invalid });
+    try testTokenize("/// NUL\x00\n", &.{ .doc_comment, .invalid });
+}
+
+test "invalid tabs and carriage returns" {
+    // "Inside Line Comments and Documentation Comments, Any TAB is rejected by
+    // the grammar since it is ambiguous how it should be rendered."
+    // https://github.com/ziglang/zig-spec/issues/38
+    try testTokenize("//\t", &.{.invalid});
+    try testTokenize("// \t", &.{.invalid});
+    try testTokenize("///\t", &.{.invalid});
+    try testTokenize("/// \t", &.{.invalid});
+    try testTokenize("//!\t", &.{.invalid});
+    try testTokenize("//! \t", &.{.invalid});
+
+    // "Inside Line Comments and Documentation Comments, CR directly preceding
+    // NL is unambiguously part of the newline sequence. It is accepted by the
+    // grammar and removed by zig fmt, leaving only NL. CR anywhere else is
+    // rejected by the grammar."
+    // https://github.com/ziglang/zig-spec/issues/38
+    try testTokenize("//\r", &.{.invalid});
+    try testTokenize("// \r", &.{.invalid});
+    try testTokenize("///\r", &.{.invalid});
+    try testTokenize("/// \r", &.{.invalid});
+    try testTokenize("//\r ", &.{.invalid});
+    try testTokenize("// \r ", &.{.invalid});
+    try testTokenize("///\r ", &.{.invalid});
+    try testTokenize("/// \r ", &.{.invalid});
+    try testTokenize("//\r\n", &.{});
+    try testTokenize("// \r\n", &.{});
+    try testTokenize("///\r\n", &.{.doc_comment});
+    try testTokenize("/// \r\n", &.{.doc_comment});
+    try testTokenize("//!\r", &.{.invalid});
+    try testTokenize("//! \r", &.{.invalid});
+    try testTokenize("//!\r ", &.{.invalid});
+    try testTokenize("//! \r ", &.{.invalid});
+    try testTokenize("//!\r\n", &.{.container_doc_comment});
+    try testTokenize("//! \r\n", &.{.container_doc_comment});
+
+    // The control characters TAB and CR are rejected by the grammar inside multi-line string literals,
+    // except if CR is directly before NL.
+    // https://github.com/ziglang/zig-spec/issues/38
+    try testTokenize("\\\\\r", &.{.invalid});
+    try testTokenize("\\\\\r ", &.{.invalid});
+    try testTokenize("\\\\ \r", &.{.invalid});
+    try testTokenize("\\\\\t", &.{.invalid});
+    try testTokenize("\\\\\t ", &.{.invalid});
+    try testTokenize("\\\\ \t", &.{.invalid});
+    try testTokenize("\\\\\r\n", &.{.multiline_string_literal_line});
+
+    // "TAB used as whitespace is...accepted by the grammar. CR used as
+    // whitespace, whether directly preceding NL or stray, is...accepted by the
+    // grammar."
+    // https://github.com/ziglang/zig-spec/issues/38
+    try testTokenize("\tpub\tswitch\t", &.{ .keyword_pub, .keyword_switch });
+    try testTokenize("\rpub\rswitch\r", &.{ .keyword_pub, .keyword_switch });
+}
+
+test "fuzzable properties upheld" {
+    return std.testing.fuzz(testPropertiesUpheld, .{});
+}
+
+fn testTokenize(source: [:0]const u8, expected_token_tags: []const Token.Tag) !void {
     var tokenizer = Tokenizer.init(source);
-    for (expected_tokens) |expected_token_id| {
+    for (expected_token_tags) |expected_token_tag| {
         const token = tokenizer.next();
-        if (token.tag != expected_token_id) {
-            std.debug.panic("expected {s}, found {s}\n", .{
-                @tagName(expected_token_id), @tagName(token.tag),
-            });
-        }
+        try std.testing.expectEqual(expected_token_tag, token.tag);
     }
+    // Last token should always be eof, even when the last token was invalid,
+    // in which case the tokenizer is in an invalid state, which can only be
+    // recovered by opinionated means outside the scope of this implementation.
     const last_token = tokenizer.next();
     try std.testing.expectEqual(Token.Tag.eof, last_token.tag);
     try std.testing.expectEqual(source.len, last_token.loc.start);
+    try std.testing.expectEqual(source.len, last_token.loc.end);
+}
+
+fn testPropertiesUpheld(source: []const u8) anyerror!void {
+    const source0 = try std.testing.allocator.dupeZ(u8, source);
+    defer std.testing.allocator.free(source0);
+    var tokenizer = Tokenizer.init(source0);
+    var tokenization_failed = false;
+    while (true) {
+        const token = tokenizer.next();
+
+        // Property: token end location after start location (or equal)
+        try std.testing.expect(token.loc.end >= token.loc.start);
+
+        switch (token.tag) {
+            .invalid => {
+                tokenization_failed = true;
+
+                // Property: invalid token always ends at newline or eof
+                try std.testing.expect(source0[token.loc.end] == '\n' or source0[token.loc.end] == 0);
+            },
+            .eof => {
+                // Property: EOF token is always 0-length at end of source.
+                try std.testing.expectEqual(source0.len, token.loc.start);
+                try std.testing.expectEqual(source0.len, token.loc.end);
+                break;
+            },
+            else => continue,
+        }
+    }
+
+    if (source0.len > 0) for (source0, source0[1..][0..source0.len]) |cur, next| {
+        // Property: No null byte allowed except at end.
+        if (cur == 0) {
+            try std.testing.expect(tokenization_failed);
+        }
+        // Property: No ASCII control characters other than \n and \t are allowed.
+        if (std.ascii.isControl(cur) and cur != '\n' and cur != '\t') {
+            try std.testing.expect(tokenization_failed);
+        }
+        // Property: All '\r' must be followed by '\n'.
+        if (cur == '\r' and next != '\n') {
+            try std.testing.expect(tokenization_failed);
+        }
+    };
 }

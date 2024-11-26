@@ -92,8 +92,6 @@ struct rt_metrics {
  */
 #define RTM_RTTUNIT     1000000 /* units for rtt, rttvar, as units per sec */
 
-
-
 #define RTF_UP          0x1             /* route usable */
 #define RTF_GATEWAY     0x2             /* destination is a gateway */
 #define RTF_HOST        0x4             /* host entry (net otherwise) */
@@ -140,6 +138,11 @@ struct rt_metrics {
 
 #define IS_DIRECT_HOSTROUTE(rt) \
 	(((rt)->rt_flags & (RTF_HOST | RTF_GATEWAY)) == RTF_HOST)
+
+#define IS_DYNAMIC_DIRECT_HOSTROUTE(rt) \
+	(((rt)->rt_flags & (RTF_CLONING | RTF_PRCLONING | RTF_HOST | RTF_LLINFO |\
+	    RTF_WASCLONED | RTF_GATEWAY)) ==\
+	 (RTF_HOST | RTF_LLINFO | RTF_WASCLONED))
 /*
  * Routing statistics.
  */
@@ -184,7 +187,6 @@ struct rt_msghdr2 {
 	u_int32_t rtm_inits;    /* which metrics we are initializing */
 	struct rt_metrics rtm_rmx; /* metrics themselves */
 };
-
 
 #define RTM_VERSION     5       /* Up the ante and ignore older versions */
 

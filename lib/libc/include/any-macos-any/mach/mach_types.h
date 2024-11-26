@@ -145,8 +145,8 @@ typedef mach_port_t             clock_ctrl_t;
 typedef mach_port_t             arcade_register_t;
 typedef mach_port_t             ipc_eventlink_t;
 typedef mach_port_t             eventlink_port_pair_t[2];
-typedef mach_port_t             suid_cred_t;
 typedef mach_port_t             task_id_token_t;
+typedef mach_port_t             kcdata_object_t;
 
 
 /*
@@ -165,7 +165,7 @@ typedef mach_port_t             mem_entry_name_port_t;
 typedef mach_port_t             exception_handler_t;
 typedef exception_handler_t     *exception_handler_array_t;
 typedef mach_port_t             vm_task_entry_t;
-typedef mach_port_t             io_master_t;
+typedef mach_port_t             io_main_t;
 typedef mach_port_t             UNDServerRef;
 typedef mach_port_t             mach_eventlink_t;
 
@@ -217,9 +217,12 @@ typedef clock_ctrl_t            clock_ctrl_port_t;
 typedef exception_handler_t     exception_port_t;
 typedef exception_handler_array_t exception_port_arrary_t;
 typedef char vfs_path_t[4096];
-typedef char nspace_path_t[1024]; /* 1024 == PATH_MAX */
-typedef char suid_cred_path_t[1024];
-typedef uint32_t suid_cred_uid_t;
+/*
+ * 8K, c.f. FSGETPATH_MAXBUFLEN in bsd/vfs/vfs_syscalls.c.
+ * These types should NEVER be allocated on the stack.
+ */
+typedef char nspace_path_t[8192];
+typedef char nspace_name_t[8192];
 
 #define TASK_NULL               ((task_t) 0)
 #define TASK_NAME_NULL          ((task_name_t) 0)
@@ -248,8 +251,8 @@ typedef uint32_t suid_cred_uid_t;
 #define ARCADE_REG_NULL         ((arcade_register_t) 0)
 #define MACH_EVENTLINK_NULL     ((mach_eventlink_t) 0)
 #define IPC_EVENTLINK_NULL      ((ipc_eventlink_t) 0)
-#define SUID_CRED_NULL          ((suid_cred_t) 0)
 #define TASK_ID_TOKEN_NULL      ((task_id_token_t) 0)
+#define KCDATA_OBJECT_NULL      ((kcdata_object_t) 0)
 
 /* capability strictly _DECREASING_.
  * not ordered the other way around because we want TASK_FLAVOR_CONTROL
@@ -261,11 +264,15 @@ typedef unsigned int            mach_task_flavor_t;
 #define TASK_FLAVOR_INSPECT     2    /* a task_inspect_t */
 #define TASK_FLAVOR_NAME        3    /* a task_name_t */
 
+#define TASK_FLAVOR_MAX         TASK_FLAVOR_NAME
+
 /* capability strictly _DECREASING_ */
 typedef unsigned int            mach_thread_flavor_t;
 #define THREAD_FLAVOR_CONTROL   0    /* a thread_t */
 #define THREAD_FLAVOR_READ      1    /* a thread_read_t */
 #define THREAD_FLAVOR_INSPECT   2    /* a thread_inspect_t */
+
+#define THREAD_FLAVOR_MAX       THREAD_FLAVOR_INSPECT
 
 /* DEPRECATED */
 typedef natural_t               ledger_item_t;

@@ -1,6 +1,5 @@
 /* `ptrace' debugger support interface.  Linux/S390 version.
-   Copyright (C) 2000-2021 Free Software Foundation, Inc.
-   Contributed by Denis Joseph Barrow (djbarrow@de.ibm.com).
+   Copyright (C) 2000-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -39,6 +38,8 @@ __BEGIN_DECLS
 # undef PTRACE_ATTACH
 # undef PTRACE_DETACH
 # undef PTRACE_SYSCALL
+# undef PTRACE_SYSEMU
+# undef PTRACE_SYSEMU_SINGLESTEP
 # undef PTRACE_SETOPTIONS
 # undef PTRACE_GETEVENTMSG
 # undef PTRACE_GETSIGINFO
@@ -84,6 +85,9 @@ __BEGIN_DECLS
 # undef PTRACE_SYSCALL_INFO_ENTRY
 # undef PTRACE_SYSCALL_INFO_EXIT
 # undef PTRACE_SYSCALL_INFO_SECCOMP
+# undef PTRACE_GET_RSEQ_CONFIGURATION
+# undef PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG
+# undef PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG
 #endif
 /* Type of the REQUEST argument to `ptrace.'  */
 enum __ptrace_request
@@ -146,6 +150,14 @@ enum __ptrace_request
   PTRACE_SYSCALL = 24,
 #define PT_SYSCALL PTRACE_SYSCALL
 
+  /* Continue and stop at the next syscall, it will not be executed.  */
+  PTRACE_SYSEMU = 31,
+#define PT_SYSEMU PTRACE_SYSEMU
+
+  /* Single step the process, the next syscall will not be executed.  */
+  PTRACE_SYSEMU_SINGLESTEP = 32,
+#define PT_SYSEMU_SINGLESTEP PTRACE_SYSEMU_SINGLESTEP
+
   /* Set ptrace filter options.  */
   PTRACE_SETOPTIONS = 0x4200,
 #define PT_SETOPTIONS PTRACE_SETOPTIONS
@@ -206,6 +218,20 @@ enum __ptrace_request
   /* Get information about system call.  */
   PTRACE_GET_SYSCALL_INFO = 0x420e,
 #define PTRACE_GET_SYSCALL_INFO PTRACE_GET_SYSCALL_INFO
+
+  /* Get rseq configuration information.  */
+  PTRACE_GET_RSEQ_CONFIGURATION = 0x420f,
+#define PTRACE_GET_RSEQ_CONFIGURATION PTRACE_GET_RSEQ_CONFIGURATION
+
+  /* Set configuration for syscall user dispatch.  */
+  PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG = 0x4210,
+#define PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG \
+  PTRACE_SET_SYSCALL_USER_DISPATCH_CONFIG
+
+  /* Get configuration for syscall user dispatch.  */
+  PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG = 0x4211,
+#define PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG \
+  PTRACE_GET_SYSCALL_USER_DISPATCH_CONFIG
 
   PTRACE_PEEKUSR_AREA = 0x5000,
 #define PTRACE_PEEKUSR_AREA PTRACE_PEEKUSR_AREA

@@ -1,4 +1,4 @@
-/* Copyright (C) 2001-2020 Free Software Foundation, Inc.
+/* Copyright (C) 2001-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -33,13 +33,6 @@
 #undef SYS_ify
 #define SYS_ify(syscall_name)	__NR_##syscall_name
 
-/* This is to help the old kernel headers where __NR_semtimedop is not
-   available.  */
-#ifndef __NR_semtimedop
-# define __NR_semtimedop 220
-#endif
-
-
 #ifdef __ASSEMBLER__
 
 /* Linux uses a negative return value to indicate syscall errors,
@@ -50,24 +43,45 @@
    might return a large offset.	 Therefore we must not anymore test
    for < 0, but test for a real error by making sure the value in %eax
    is a real error number.  Linus said he will make sure the no syscall
-   returns a value in -1 .. -4095 as a valid result so we can savely
+   returns a value in -1 .. -4095 as a valid result so we can safely
    test with -4095.  */
 
 /* We don't want the label for the error handle to be global when we define
    it here.  */
+# undef SYSCALL_ERROR_LABEL
 # ifdef PIC
+#  undef SYSCALL_ERROR_LABEL
 #  define SYSCALL_ERROR_LABEL 0f
 # else
+#  undef SYSCALL_ERROR_LABEL
 #  define SYSCALL_ERROR_LABEL syscall_error
 # endif
 
+/* PSEUDO and T_PSEUDO macros have 2 extra arguments for unsigned long
+   int arguments.  */
+# define PSEUDOS_HAVE_ULONG_INDICES 1
+
+# ifndef SYSCALL_ULONG_ARG_1
+#  define SYSCALL_ULONG_ARG_1 0
+#  define SYSCALL_ULONG_ARG_2 0
+# endif
+
 # undef	PSEUDO
-# define PSEUDO(name, syscall_name, args)				      \
-  .text;								      \
-  ENTRY (name)								      \
-    DO_CALL (syscall_name, args);					      \
-    cmpq $-4095, %rax;							      \
+# if SYSCALL_ULONG_ARG_1
+#  define PSEUDO(name, syscall_name, args, ulong_arg_1, ulong_arg_2) \
+  .text;							      \
+  ENTRY (name)							      \
+    DO_CALL (syscall_name, args, ulong_arg_1, ulong_arg_2);	      \
+    cmpq $-4095, %rax;						      \
     jae SYSCALL_ERROR_LABEL
+# else
+#  define PSEUDO(name, syscall_name, args) \
+  .text;							      \
+  ENTRY (name)							      \
+    DO_CALL (syscall_name, args, 0, 0);				      \
+    cmpq $-4095, %rax;						      \
+    jae SYSCALL_ERROR_LABEL
+# endif
 
 # undef	PSEUDO_END
 # define PSEUDO_END(name)						      \
@@ -75,10 +89,17 @@
   END (name)
 
 # undef	PSEUDO_NOERRNO
-# define PSEUDO_NOERRNO(name, syscall_name, args) \
-  .text;								      \
-  ENTRY (name)								      \
-    DO_CALL (syscall_name, args)
+# if SYSCALL_ULONG_ARG_1
+#  define PSEUDO_NOERRNO(name, syscall_name, args, ulong_arg_1, ulong_arg_2) \
+  .text;							      \
+  ENTRY (name)							      \
+    DO_CALL (syscall_name, args, ulong_arg_1, ulong_arg_2)
+# else
+#  define PSEUDO_NOERRNO(name, syscall_name, args) \
+  .text;							      \
+  ENTRY (name)							      \
+    DO_CALL (syscall_name, args, 0, 0)
+# endif
 
 # undef	PSEUDO_END_NOERRNO
 # define PSEUDO_END_NOERRNO(name) \
@@ -87,11 +108,19 @@
 # define ret_NOERRNO ret
 
 # undef	PSEUDO_ERRVAL
-# define PSEUDO_ERRVAL(name, syscall_name, args) \
-  .text;								      \
-  ENTRY (name)								      \
-    DO_CALL (syscall_name, args);					      \
+# if SYSCALL_ULONG_ARG_1
+#  define PSEUDO_ERRVAL(name, syscall_name, args, ulong_arg_1, ulong_arg_2) \
+  .text;							\
+  ENTRY (name)							\
+    DO_CALL (syscall_name, args, ulong_arg_1, ulong_arg_2);	\
     negq %rax
+# else
+#  define PSEUDO_ERRVAL(name, syscall_name, args) \
+  .text;							\
+  ENTRY (name)							\
+    DO_CALL (syscall_name, args, 0, 0);				\
+    negq %rax
+# endif
 
 # undef	PSEUDO_END_ERRVAL
 # define PSEUDO_END_ERRVAL(name) \
@@ -163,8 +192,10 @@
     Syscalls of more than 6 arguments are not supported.  */
 
 # undef	DO_CALL
-# define DO_CALL(syscall_name, args)		\
+# define DO_CALL(syscall_name, args, ulong_arg_1, ulong_arg_2) \
     DOARGS_##args				\
+    ZERO_EXTEND_##ulong_arg_1			\
+    ZERO_EXTEND_##ulong_arg_2			\
     movl $SYS_ify (syscall_name), %eax;		\
     syscall;
 
@@ -176,57 +207,39 @@
 # define DOARGS_5 DOARGS_4
 # define DOARGS_6 DOARGS_5
 
+# define ZERO_EXTEND_0 /* nothing */
+# define ZERO_EXTEND_1 /* nothing */
+# define ZERO_EXTEND_2 /* nothing */
+# define ZERO_EXTEND_3 /* nothing */
+# define ZERO_EXTEND_4 /* nothing */
+# define ZERO_EXTEND_5 /* nothing */
+# define ZERO_EXTEND_6 /* nothing */
+
 #else	/* !__ASSEMBLER__ */
-/* Define a macro which expands inline into the wrapper code for a system
-   call.  */
-# undef INLINE_SYSCALL
-# define INLINE_SYSCALL(name, nr, args...) \
-  ({									      \
-    unsigned long int resultvar = INTERNAL_SYSCALL (name, , nr, args);	      \
-    if (__glibc_unlikely (INTERNAL_SYSCALL_ERROR_P (resultvar, )))	      \
-      {									      \
-	__set_errno (INTERNAL_SYSCALL_ERRNO (resultvar, ));		      \
-	resultvar = (unsigned long int) -1;				      \
-      }									      \
-    (long int) resultvar; })
-
-/* Define a macro with explicit types for arguments, which expands inline
-   into the wrapper code for a system call.  It should be used when size
-   of any argument > size of long int.  */
-# undef INLINE_SYSCALL_TYPES
-# define INLINE_SYSCALL_TYPES(name, nr, args...) \
-  ({									      \
-    unsigned long int resultvar = INTERNAL_SYSCALL_TYPES (name, , nr, args);  \
-    if (__glibc_unlikely (INTERNAL_SYSCALL_ERROR_P (resultvar, )))	      \
-      {									      \
-	__set_errno (INTERNAL_SYSCALL_ERRNO (resultvar, ));		      \
-	resultvar = (unsigned long int) -1;				      \
-      }									      \
-    (long int) resultvar; })
-
-# undef INTERNAL_SYSCALL_DECL
-# define INTERNAL_SYSCALL_DECL(err) do { } while (0)
 
 /* Registers clobbered by syscall.  */
 # define REGISTERS_CLOBBERED_BY_SYSCALL "cc", "r11", "cx"
 
-/* Create a variable 'name' based on type 'X' to avoid explicit types.
-   This is mainly used set use 64-bits arguments in x32.   */
-#define TYPEFY(X, name) __typeof__ ((X) - (X)) name
-/* Explicit cast the argument to avoid integer from pointer warning on
-   x32.  */
-#define ARGIFY(X) ((__typeof__ ((X) - (X))) (X))
+/* NB: This also works when X is an array.  For an array X,  type of
+   (X) - (X) is ptrdiff_t, which is signed, since size of ptrdiff_t
+   == size of pointer, cast is a NOP.   */
+#define TYPEFY1(X) __typeof__ ((X) - (X))
+/* Explicit cast the argument.  */
+#define ARGIFY(X) ((TYPEFY1 (X)) (X))
+/* Create a variable 'name' based on type of variable 'X' to avoid
+   explicit types.  */
+#define TYPEFY(X, name) __typeof__ (ARGIFY (X)) name
 
 #undef INTERNAL_SYSCALL
-#define INTERNAL_SYSCALL(name, err, nr, args...)			\
-	internal_syscall##nr (SYS_ify (name), err, args)
+#define INTERNAL_SYSCALL(name, nr, args...)				\
+	internal_syscall##nr (SYS_ify (name), args)
 
 #undef INTERNAL_SYSCALL_NCS
-#define INTERNAL_SYSCALL_NCS(number, err, nr, args...)			\
-	internal_syscall##nr (number, err, args)
+#define INTERNAL_SYSCALL_NCS(number, nr, args...)			\
+	internal_syscall##nr (number, args)
 
 #undef internal_syscall0
-#define internal_syscall0(number, err, dummy...)			\
+#define internal_syscall0(number, dummy...)				\
 ({									\
     unsigned long int resultvar;					\
     asm volatile (							\
@@ -238,7 +251,7 @@
 })
 
 #undef internal_syscall1
-#define internal_syscall1(number, err, arg1)				\
+#define internal_syscall1(number, arg1)					\
 ({									\
     unsigned long int resultvar;					\
     TYPEFY (arg1, __arg1) = ARGIFY (arg1);			 	\
@@ -252,7 +265,7 @@
 })
 
 #undef internal_syscall2
-#define internal_syscall2(number, err, arg1, arg2)			\
+#define internal_syscall2(number, arg1, arg2)				\
 ({									\
     unsigned long int resultvar;					\
     TYPEFY (arg2, __arg2) = ARGIFY (arg2);			 	\
@@ -268,7 +281,7 @@
 })
 
 #undef internal_syscall3
-#define internal_syscall3(number, err, arg1, arg2, arg3)		\
+#define internal_syscall3(number, arg1, arg2, arg3)			\
 ({									\
     unsigned long int resultvar;					\
     TYPEFY (arg3, __arg3) = ARGIFY (arg3);			 	\
@@ -286,7 +299,7 @@
 })
 
 #undef internal_syscall4
-#define internal_syscall4(number, err, arg1, arg2, arg3, arg4)		\
+#define internal_syscall4(number, arg1, arg2, arg3, arg4)		\
 ({									\
     unsigned long int resultvar;					\
     TYPEFY (arg4, __arg4) = ARGIFY (arg4);			 	\
@@ -306,7 +319,7 @@
 })
 
 #undef internal_syscall5
-#define internal_syscall5(number, err, arg1, arg2, arg3, arg4, arg5)	\
+#define internal_syscall5(number, arg1, arg2, arg3, arg4, arg5)	\
 ({									\
     unsigned long int resultvar;					\
     TYPEFY (arg5, __arg5) = ARGIFY (arg5);			 	\
@@ -329,7 +342,7 @@
 })
 
 #undef internal_syscall6
-#define internal_syscall6(number, err, arg1, arg2, arg3, arg4, arg5, arg6) \
+#define internal_syscall6(number, arg1, arg2, arg3, arg4, arg5, arg6) \
 ({									\
     unsigned long int resultvar;					\
     TYPEFY (arg6, __arg6) = ARGIFY (arg6);			 	\
@@ -353,12 +366,6 @@
     (long int) resultvar;						\
 })
 
-# undef INTERNAL_SYSCALL_ERROR_P
-# define INTERNAL_SYSCALL_ERROR_P(val, err) \
-  ((unsigned long int) (long int) (val) >= -4095L)
-
-# undef INTERNAL_SYSCALL_ERRNO
-# define INTERNAL_SYSCALL_ERRNO(val, err)	(-(val))
 
 # define VDSO_NAME  "LINUX_2.6"
 # define VDSO_HASH  61765110
@@ -370,49 +377,9 @@
 # define HAVE_GETCPU_VSYSCALL		"__vdso_getcpu"
 # define HAVE_CLOCK_GETRES64_VSYSCALL   "__vdso_clock_getres"
 
-# define SINGLE_THREAD_BY_GLOBAL		1
+# define HAVE_CLONE3_WRAPPER			1
 
 #endif	/* __ASSEMBLER__ */
-
-
-/* Pointer mangling support.  */
-#if IS_IN (rtld)
-/* We cannot use the thread descriptor because in ld.so we use setjmp
-   earlier than the descriptor is initialized.  */
-# ifdef __ASSEMBLER__
-#  define PTR_MANGLE(reg)	xor __pointer_chk_guard_local(%rip), reg;    \
-				rol $2*LP_SIZE+1, reg
-#  define PTR_DEMANGLE(reg)	ror $2*LP_SIZE+1, reg;			     \
-				xor __pointer_chk_guard_local(%rip), reg
-# else
-#  define PTR_MANGLE(reg)	asm ("xor __pointer_chk_guard_local(%%rip), %0\n" \
-				     "rol $2*" LP_SIZE "+1, %0"			  \
-				     : "=r" (reg) : "0" (reg))
-#  define PTR_DEMANGLE(reg)	asm ("ror $2*" LP_SIZE "+1, %0\n"		  \
-				     "xor __pointer_chk_guard_local(%%rip), %0"   \
-				     : "=r" (reg) : "0" (reg))
-# endif
-#else
-# ifdef __ASSEMBLER__
-#  define PTR_MANGLE(reg)	xor %fs:POINTER_GUARD, reg;		      \
-				rol $2*LP_SIZE+1, reg
-#  define PTR_DEMANGLE(reg)	ror $2*LP_SIZE+1, reg;			      \
-				xor %fs:POINTER_GUARD, reg
-# else
-#  define PTR_MANGLE(var)	asm ("xor %%fs:%c2, %0\n"		      \
-				     "rol $2*" LP_SIZE "+1, %0"		      \
-				     : "=r" (var)			      \
-				     : "0" (var),			      \
-				       "i" (offsetof (tcbhead_t,	      \
-						      pointer_guard)))
-#  define PTR_DEMANGLE(var)	asm ("ror $2*" LP_SIZE "+1, %0\n"	      \
-				     "xor %%fs:%c2, %0"			      \
-				     : "=r" (var)			      \
-				     : "0" (var),			      \
-				       "i" (offsetof (tcbhead_t,	      \
-						      pointer_guard)))
-# endif
-#endif
 
 /* How to pass the off{64}_t argument on p{readv,writev}{64}.  */
 #undef LO_HI_LONG

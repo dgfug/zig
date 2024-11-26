@@ -1,4 +1,4 @@
-/* Copyright (C) 1994-2020 Free Software Foundation, Inc.
+/* Copyright (C) 1994-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -30,6 +30,7 @@
 /* For ELF we need to add the `.type' directive to make shared libraries
    work right.  */
 #undef ENTRY
+#undef ENTRY2
 #define ENTRY(name) \
   .globl name; \
   .align ALIGN; \
@@ -44,7 +45,7 @@
 
 #ifndef __ASSEMBLER__
 #define FATAL_PREPARE_INCLUDE <mach/mig_support.h>
-#define FATAL_PREPARE __mig_dealloc_reply_port (MACH_PORT_NULL)
+#define FATAL_PREPARE __mig_dealloc_reply_port (__mig_get_reply_port ())
 #endif
 
 /* sysdeps/mach/MACHINE/sysdep.h should define the following macros.  */
@@ -53,21 +54,6 @@
 #ifndef ENTRY
 #define ENTRY(name) .error ENTRY not defined by sysdeps/mach/MACHINE/sysdep.h
 /* This is not used on all machines.  */
-#endif
-
-/* Set variables ARGC, ARGV, and ENVP for the arguments
-   left on the stack by the microkernel.  */
-#ifndef SNARF_ARGS
-#define SNARF_ARGS(argc, argv, envp)
-#error SNARF_ARGS not defined by sysdeps/mach/MACHINE/sysdep.h
-#endif
-
-/* Call the C function FN with no arguments,
-   on a stack starting at SP (as returned by *_cthread_init_routine).
-   You don't need to deal with FN returning; it shouldn't.  */
-#ifndef	CALL_WITH_SP
-#define CALL_WITH_SP(fn, sp)
-#error CALL_WITH_SP not defined by sysdeps/mach/MACHINE/sysdep.h
 #endif
 
 /* LOSE can be defined as the `halt' instruction or something

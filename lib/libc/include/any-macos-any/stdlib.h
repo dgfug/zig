@@ -178,18 +178,11 @@ unsigned long long
 	 strtoull(const char *__str, char **__endptr, int __base);
 #endif /* !__DARWIN_NO_LONG_LONG */
 
-#if TARGET_OS_IPHONE
-#define __swift_unavailable_on(osx_msg, ios_msg) __swift_unavailable(ios_msg)
-#else
-#define __swift_unavailable_on(osx_msg, ios_msg) __swift_unavailable(osx_msg)
-#endif
-
-__swift_unavailable_on("Use posix_spawn APIs or NSTask instead.", "Process spawning is unavailable")
+__swift_unavailable("Use posix_spawn APIs or NSTask instead. (On iOS, process spawning is unavailable.)")
 __API_AVAILABLE(macos(10.0)) __IOS_PROHIBITED
 __WATCHOS_PROHIBITED __TVOS_PROHIBITED
 int	 system(const char *) __DARWIN_ALIAS_C(system);
 
-#undef __swift_unavailable_on
 
 size_t	 wcstombs(char * __restrict, const wchar_t * __restrict, size_t);
 int	 wctomb(char *, wchar_t);
@@ -213,6 +206,9 @@ long	 jrand48(unsigned short[3]) __swift_unavailable("Use arc4random instead.");
 char	*l64a(long);
 void	 lcong48(unsigned short[7]);
 long	 lrand48(void) __swift_unavailable("Use arc4random instead.");
+#if !defined(_POSIX_C_SOURCE)
+__deprecated_msg("This function is provided for compatibility reasons only.  Due to security concerns inherent in the design of mktemp(3), it is highly recommended that you use mkstemp(3) instead.")
+#endif
 char	*mktemp(char *);
 int	 mkstemp(char *);
 long	 mrand48(void) __swift_unavailable("Use arc4random instead.");
@@ -254,6 +250,7 @@ int	 unsetenv(const char *) __DARWIN_ALIAS(unsetenv);
 void	 unsetenv(const char *);
 #endif /* __DARWIN_UNIX03 */
 #endif	/* !_ANSI_SOURCE */
+__END_DECLS
 
 #if !defined(_ANSI_SOURCE) && (!defined(_POSIX_C_SOURCE) || defined(_DARWIN_C_SOURCE))
 #include <machine/types.h>
@@ -261,6 +258,7 @@ void	 unsetenv(const char *);
 #include <sys/_types/_mode_t.h>
 #include <_types/_uint32_t.h>
 
+__BEGIN_DECLS
 uint32_t arc4random(void);
 void	 arc4random_addrandom(unsigned char * /*dat*/, int /*datlen*/)
     __OSX_DEPRECATED(10.0, 10.12, "use arc4random_stir")
@@ -273,8 +271,17 @@ uint32_t
 	 arc4random_uniform(uint32_t __upper_bound) __OSX_AVAILABLE_STARTING(__MAC_10_7, __IPHONE_4_3);
 #ifdef __BLOCKS__
 int	 atexit_b(void (^ _Nonnull)(void)) __OSX_AVAILABLE_STARTING(__MAC_10_6, __IPHONE_3_2);
+
+#ifdef __BLOCKS__
+#if __has_attribute(noescape)
+#define __bsearch_noescape __attribute__((__noescape__))
+#else
+#define __bsearch_noescape
+#endif
+#endif /* __BLOCKS__ */
 void	*bsearch_b(const void *__key, const void *__base, size_t __nel,
-	    size_t __width, int (^ _Nonnull __compar)(const void *, const void *)) __OSX_AVAILABLE_STARTING(__MAC_10_6, __IPHONE_3_2);
+	    size_t __width, int (^ _Nonnull __compar)(const void *, const void *) __bsearch_noescape)
+	    __OSX_AVAILABLE_STARTING(__MAC_10_6, __IPHONE_3_2);
 #endif /* __BLOCKS__ */
 
 	 /* getcap(3) functions */
@@ -358,8 +365,10 @@ unsigned long long
 #endif /* !__DARWIN_NO_LONG_LONG */
 extern char *suboptarg;		/* getsubopt(3) external variable */
 /* valloc is now declared in _malloc.h */
+__END_DECLS
 #endif	/* !_ANSI_SOURCE && !_POSIX_SOURCE */
 
+__BEGIN_DECLS
 /* Poison the following routines if -fshort-wchar is set */
 #if !defined(__cplusplus) && defined(__WCHAR_MAX__) && __WCHAR_MAX__ <= 0xffffU
 #pragma GCC poison mbstowcs mbtowc wcstombs wctomb

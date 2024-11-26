@@ -1,18 +1,25 @@
-const Builder = @import("std").build.Builder;
+const std = @import("std");
 
-pub fn build(b: *Builder) void {
-    const mode = b.standardReleaseOptions();
-
-    const foo = b.addStaticLibrary("foo", null);
-    foo.addCSourceFile("foo.c", &[_][]const u8{});
-    foo.setBuildMode(mode);
-    foo.addIncludeDir(".");
-
-    const test_exe = b.addTest("foo.zig");
-    test_exe.setBuildMode(mode);
-    test_exe.linkLibrary(foo);
-    test_exe.addIncludeDir(".");
-
+pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Test it");
-    test_step.dependOn(&test_exe.step);
+    b.default_step = test_step;
+
+    const optimize: std.builtin.OptimizeMode = .Debug;
+
+    const foo = b.addStaticLibrary(.{
+        .name = "foo",
+        .optimize = optimize,
+        .target = b.graph.host,
+    });
+    foo.addCSourceFile(.{ .file = b.path("foo.c"), .flags = &[_][]const u8{} });
+    foo.addIncludePath(b.path("."));
+
+    const test_exe = b.addTest(.{
+        .root_source_file = b.path("foo.zig"),
+        .optimize = optimize,
+    });
+    test_exe.linkLibrary(foo);
+    test_exe.addIncludePath(b.path("."));
+
+    test_step.dependOn(&b.addRunArtifact(test_exe).step);
 }

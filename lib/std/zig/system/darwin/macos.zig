@@ -3,7 +3,6 @@ const builtin = @import("builtin");
 const assert = std.debug.assert;
 const mem = std.mem;
 const testing = std.testing;
-const os = std.os;
 
 const Target = std.Target;
 
@@ -74,20 +73,20 @@ pub fn detect(target_os: *Target.Os) !void {
     return error.OSVersionDetectionFail;
 }
 
-fn parseSystemVersion(buf: []const u8) !std.builtin.Version {
+fn parseSystemVersion(buf: []const u8) !std.SemanticVersion {
     var svt = SystemVersionTokenizer{ .bytes = buf };
     try svt.skipUntilTag(.start, "dict");
     while (true) {
         try svt.skipUntilTag(.start, "key");
         const content = try svt.expectContent();
         try svt.skipUntilTag(.end, "key");
-        if (std.mem.eql(u8, content, "ProductVersion")) break;
+        if (mem.eql(u8, content, "ProductVersion")) break;
     }
     try svt.skipUntilTag(.start, "string");
     const ver = try svt.expectContent();
     try svt.skipUntilTag(.end, "string");
 
-    return std.builtin.Version.parse(ver);
+    return try std.Target.Query.parseVersion(ver);
 }
 
 const SystemVersionTokenizer = struct {
@@ -246,7 +245,7 @@ const SystemVersionTokenizer = struct {
         while (try self.next()) |tok| {
             switch (tok) {
                 .tag => |tag| {
-                    if (tag.kind == kind and std.mem.eql(u8, tag.name, name)) return;
+                    if (tag.kind == kind and mem.eql(u8, tag.name, name)) return;
                 },
                 else => {},
             }
@@ -278,7 +277,7 @@ const SystemVersionTokenizer = struct {
 };
 
 test "detect" {
-    const cases = .{
+    const cases: [5]struct { []const u8, std.SemanticVersion } = .{
         .{
             \\<?xml version="1.0" encoding="UTF-8"?>
             \\<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -297,23 +296,23 @@ test "detect" {
             \\</dict>
             \\</plist>
             ,
-            .{ .major = 10, .minor = 3 },
+            .{ .major = 10, .minor = 3, .patch = 0 },
         },
         .{
             \\<?xml version="1.0" encoding="UTF-8"?>
             \\<!DOCTYPE plist PUBLIC "-//Apple Computer//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
             \\<plist version="1.0">
             \\<dict>
-            \\	<key>ProductBuildVersion</key>
-            \\	<string>7W98</string>
-            \\	<key>ProductCopyright</key>
-            \\	<string>Apple Computer, Inc. 1983-2004</string>
-            \\	<key>ProductName</key>
-            \\	<string>Mac OS X</string>
-            \\	<key>ProductUserVisibleVersion</key>
-            \\	<string>10.3.9</string>
-            \\	<key>ProductVersion</key>
-            \\	<string>10.3.9</string>
+            \\ <key>ProductBuildVersion</key>
+            \\ <string>7W98</string>
+            \\ <key>ProductCopyright</key>
+            \\ <string>Apple Computer, Inc. 1983-2004</string>
+            \\ <key>ProductName</key>
+            \\ <string>Mac OS X</string>
+            \\ <key>ProductUserVisibleVersion</key>
+            \\ <string>10.3.9</string>
+            \\ <key>ProductVersion</key>
+            \\ <string>10.3.9</string>
             \\</dict>
             \\</plist>
             ,
@@ -324,18 +323,18 @@ test "detect" {
             \\<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
             \\<plist version="1.0">
             \\<dict>
-            \\	<key>ProductBuildVersion</key>
-            \\	<string>19G68</string>
-            \\	<key>ProductCopyright</key>
-            \\	<string>1983-2020 Apple Inc.</string>
-            \\	<key>ProductName</key>
-            \\	<string>Mac OS X</string>
-            \\	<key>ProductUserVisibleVersion</key>
-            \\	<string>10.15.6</string>
-            \\	<key>ProductVersion</key>
-            \\	<string>10.15.6</string>
-            \\	<key>iOSSupportVersion</key>
-            \\	<string>13.6</string>
+            \\ <key>ProductBuildVersion</key>
+            \\ <string>19G68</string>
+            \\ <key>ProductCopyright</key>
+            \\ <string>1983-2020 Apple Inc.</string>
+            \\ <key>ProductName</key>
+            \\ <string>Mac OS X</string>
+            \\ <key>ProductUserVisibleVersion</key>
+            \\ <string>10.15.6</string>
+            \\ <key>ProductVersion</key>
+            \\ <string>10.15.6</string>
+            \\ <key>iOSSupportVersion</key>
+            \\ <string>13.6</string>
             \\</dict>
             \\</plist>
             ,
@@ -346,68 +345,58 @@ test "detect" {
             \\<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
             \\<plist version="1.0">
             \\<dict>
-            \\	<key>ProductBuildVersion</key>
-            \\	<string>20A2408</string>
-            \\	<key>ProductCopyright</key>
-            \\	<string>1983-2020 Apple Inc.</string>
-            \\	<key>ProductName</key>
-            \\	<string>macOS</string>
-            \\	<key>ProductUserVisibleVersion</key>
-            \\	<string>11.0</string>
-            \\	<key>ProductVersion</key>
-            \\	<string>11.0</string>
-            \\	<key>iOSSupportVersion</key>
-            \\	<string>14.2</string>
+            \\ <key>ProductBuildVersion</key>
+            \\ <string>20A2408</string>
+            \\ <key>ProductCopyright</key>
+            \\ <string>1983-2020 Apple Inc.</string>
+            \\ <key>ProductName</key>
+            \\ <string>macOS</string>
+            \\ <key>ProductUserVisibleVersion</key>
+            \\ <string>11.0</string>
+            \\ <key>ProductVersion</key>
+            \\ <string>11.0</string>
+            \\ <key>iOSSupportVersion</key>
+            \\ <string>14.2</string>
             \\</dict>
             \\</plist>
             ,
-            .{ .major = 11, .minor = 0 },
+            .{ .major = 11, .minor = 0, .patch = 0 },
         },
         .{
             \\<?xml version="1.0" encoding="UTF-8"?>
             \\<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
             \\<plist version="1.0">
             \\<dict>
-            \\	<key>ProductBuildVersion</key>
-            \\	<string>20C63</string>
-            \\	<key>ProductCopyright</key>
-            \\	<string>1983-2020 Apple Inc.</string>
-            \\	<key>ProductName</key>
-            \\	<string>macOS</string>
-            \\	<key>ProductUserVisibleVersion</key>
-            \\	<string>11.1</string>
-            \\	<key>ProductVersion</key>
-            \\	<string>11.1</string>
-            \\	<key>iOSSupportVersion</key>
-            \\	<string>14.3</string>
+            \\ <key>ProductBuildVersion</key>
+            \\ <string>20C63</string>
+            \\ <key>ProductCopyright</key>
+            \\ <string>1983-2020 Apple Inc.</string>
+            \\ <key>ProductName</key>
+            \\ <string>macOS</string>
+            \\ <key>ProductUserVisibleVersion</key>
+            \\ <string>11.1</string>
+            \\ <key>ProductVersion</key>
+            \\ <string>11.1</string>
+            \\ <key>iOSSupportVersion</key>
+            \\ <string>14.3</string>
             \\</dict>
             \\</plist>
             ,
-            .{ .major = 11, .minor = 1 },
+            .{ .major = 11, .minor = 1, .patch = 0 },
         },
     };
 
     inline for (cases) |case| {
         const ver0 = try parseSystemVersion(case[0]);
-        const ver1: std.builtin.Version = case[1];
-        try testVersionEquality(ver1, ver0);
+        const ver1 = case[1];
+        try testing.expectEqual(std.math.Order.eq, ver0.order(ver1));
     }
-}
-
-fn testVersionEquality(expected: std.builtin.Version, got: std.builtin.Version) !void {
-    var b_expected: [64]u8 = undefined;
-    const s_expected: []const u8 = try std.fmt.bufPrint(b_expected[0..], "{}", .{expected});
-
-    var b_got: [64]u8 = undefined;
-    const s_got: []const u8 = try std.fmt.bufPrint(b_got[0..], "{}", .{got});
-
-    try testing.expectEqualStrings(s_expected, s_got);
 }
 
 pub fn detectNativeCpuAndFeatures() ?Target.Cpu {
     var cpu_family: std.c.CPUFAMILY = undefined;
     var len: usize = @sizeOf(std.c.CPUFAMILY);
-    os.sysctlbynameZ("hw.cpufamily", &cpu_family, &len, null, 0) catch |err| switch (err) {
+    std.posix.sysctlbynameZ("hw.cpufamily", &cpu_family, &len, null, 0) catch |err| switch (err) {
         error.NameTooLong => unreachable, // constant, known good value
         error.PermissionDenied => unreachable, // only when setting values,
         error.SystemResources => unreachable, // memory already on the stack
@@ -417,8 +406,10 @@ pub fn detectNativeCpuAndFeatures() ?Target.Cpu {
 
     const current_arch = builtin.cpu.arch;
     switch (current_arch) {
-        .aarch64, .aarch64_be, .aarch64_32 => {
+        .aarch64, .aarch64_be => {
             const model = switch (cpu_family) {
+                .ARM_EVEREST_SAWTOOTH => &Target.aarch64.cpu.apple_a16,
+                .ARM_BLIZZARD_AVALANCHE => &Target.aarch64.cpu.apple_a15,
                 .ARM_FIRESTORM_ICESTORM => &Target.aarch64.cpu.apple_a14,
                 .ARM_LIGHTNING_THUNDER => &Target.aarch64.cpu.apple_a13,
                 .ARM_VORTEX_TEMPEST => &Target.aarch64.cpu.apple_a12,
@@ -428,6 +419,11 @@ pub fn detectNativeCpuAndFeatures() ?Target.Cpu {
                 .ARM_TYPHOON => &Target.aarch64.cpu.apple_a8,
                 .ARM_CYCLONE => &Target.aarch64.cpu.cyclone,
                 else => return null,
+                .ARM_COLL => &Target.aarch64.cpu.apple_a17,
+                .ARM_IBIZA => &Target.aarch64.cpu.apple_m3, // base
+                .ARM_LOBOS => &Target.aarch64.cpu.apple_m3, // pro
+                .ARM_PALMA => &Target.aarch64.cpu.apple_m3, // max
+                .ARM_DONAN => &Target.aarch64.cpu.apple_m4,
             };
 
             return Target.Cpu{

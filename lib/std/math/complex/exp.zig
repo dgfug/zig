@@ -13,8 +13,8 @@ const Complex = cmath.Complex;
 const ldexp_cexp = @import("ldexp.zig").ldexp_cexp;
 
 /// Returns e raised to the power of z (e^z).
-pub fn exp(z: anytype) @TypeOf(z) {
-    const T = @TypeOf(z.re);
+pub fn exp(z: anytype) Complex(@TypeOf(z.re, z.im)) {
+    const T = @TypeOf(z.re, z.im);
 
     return switch (T) {
         f32 => exp32(z),
@@ -30,16 +30,16 @@ fn exp32(z: Complex(f32)) Complex(f32) {
     const x = z.re;
     const y = z.im;
 
-    const hy = @bitCast(u32, y) & 0x7fffffff;
+    const hy = @as(u32, @bitCast(y)) & 0x7fffffff;
     // cexp(x + i0) = exp(x) + i0
     if (hy == 0) {
-        return Complex(f32).init(math.exp(x), y);
+        return Complex(f32).init(@exp(x), y);
     }
 
-    const hx = @bitCast(u32, x);
+    const hx = @as(u32, @bitCast(x));
     // cexp(0 + iy) = cos(y) + isin(y)
     if ((hx & 0x7fffffff) == 0) {
-        return Complex(f32).init(math.cos(y), math.sin(y));
+        return Complex(f32).init(@cos(y), @sin(y));
     }
 
     if (hy >= 0x7f800000) {
@@ -63,8 +63,8 @@ fn exp32(z: Complex(f32)) Complex(f32) {
     // - x = +-inf
     // - x = nan
     else {
-        const exp_x = math.exp(x);
-        return Complex(f32).init(exp_x * math.cos(y), exp_x * math.sin(y));
+        const exp_x = @exp(x);
+        return Complex(f32).init(exp_x * @cos(y), exp_x * @sin(y));
     }
 }
 
@@ -75,22 +75,22 @@ fn exp64(z: Complex(f64)) Complex(f64) {
     const x = z.re;
     const y = z.im;
 
-    const fy = @bitCast(u64, y);
-    const hy = @intCast(u32, (fy >> 32) & 0x7fffffff);
-    const ly = @truncate(u32, fy);
+    const fy: u64 = @bitCast(y);
+    const hy: u32 = @intCast((fy >> 32) & 0x7fffffff);
+    const ly: u32 = @truncate(fy);
 
     // cexp(x + i0) = exp(x) + i0
     if (hy | ly == 0) {
-        return Complex(f64).init(math.exp(x), y);
+        return Complex(f64).init(@exp(x), y);
     }
 
-    const fx = @bitCast(u64, x);
-    const hx = @intCast(u32, fx >> 32);
-    const lx = @truncate(u32, fx);
+    const fx: u64 = @bitCast(x);
+    const hx: u32 = @intCast(fx >> 32);
+    const lx: u32 = @truncate(fx);
 
     // cexp(0 + iy) = cos(y) + isin(y)
     if ((hx & 0x7fffffff) | lx == 0) {
-        return Complex(f64).init(math.cos(y), math.sin(y));
+        return Complex(f64).init(@cos(y), @sin(y));
     }
 
     if (hy >= 0x7ff00000) {
@@ -114,13 +114,13 @@ fn exp64(z: Complex(f64)) Complex(f64) {
     // - x = +-inf
     // - x = nan
     else {
-        const exp_x = math.exp(x);
-        return Complex(f64).init(exp_x * math.cos(y), exp_x * math.sin(y));
+        const exp_x = @exp(x);
+        return Complex(f64).init(exp_x * @cos(y), exp_x * @sin(y));
     }
 }
 
-test "complex.cexp32" {
-    const tolerance_f32 = math.sqrt(math.epsilon(f32));
+test exp32 {
+    const tolerance_f32 = @sqrt(math.floatEps(f32));
 
     {
         const a = Complex(f32).init(5, 3);
@@ -139,8 +139,8 @@ test "complex.cexp32" {
     }
 }
 
-test "complex.cexp64" {
-    const tolerance_f64 = math.sqrt(math.epsilon(f64));
+test exp64 {
+    const tolerance_f64 = @sqrt(math.floatEps(f64));
 
     {
         const a = Complex(f64).init(5, 3);

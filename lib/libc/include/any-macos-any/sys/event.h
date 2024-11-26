@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2003-2019 Apple Inc. All rights reserved.
+ * Copyright (c) 2003-2021 Apple Inc. All rights reserved.
  *
  * @APPLE_OSREFERENCE_LICENSE_HEADER_START@
  *
@@ -58,7 +58,9 @@
 
 #include <machine/types.h>
 #include <sys/cdefs.h>
+#include <sys/queue.h>
 #include <stdint.h>
+#include <sys/types.h>
 
 /*
  * Filter types
@@ -90,7 +92,6 @@ struct kevent {
 	void            *udata; /* opaque user data identifier */
 };
 
-
 #pragma pack()
 
 struct kevent64_s {
@@ -102,7 +103,6 @@ struct kevent64_s {
 	uint64_t        udata;          /* opaque user data identifier */
 	uint64_t        ext[2];         /* filter-specific extensions */
 };
-
 
 #define EV_SET(kevp, a, b, c, d, e, f) do {     \
 	struct kevent *__kevp__ = (kevp);       \
@@ -131,7 +131,6 @@ struct kevent64_s {
 #define KEVENT_FLAG_NONE                         0x000000       /* no flag value */
 #define KEVENT_FLAG_IMMEDIATE                    0x000001       /* immediate timeout */
 #define KEVENT_FLAG_ERROR_EVENTS                 0x000002       /* output events only include change errors */
-
 
 /* actions */
 #define EV_ADD              0x0001      /* add event to kq (implies enable) */
@@ -218,7 +217,6 @@ struct kevent64_s {
 #define NOTE_FFCTRLMASK 0xc0000000              /* mask for operations */
 #define NOTE_FFLAGSMASK 0x00ffffff
 
-
 /*
  * data/hint fflags for EVFILT_{READ|WRITE}, shared with userspace
  *
@@ -242,6 +240,8 @@ struct kevent64_s {
 #define NOTE_REVOKE     0x00000040              /* vnode access was revoked */
 #define NOTE_NONE       0x00000080              /* No specific vnode event: to test for EVFILT_READ activation*/
 #define NOTE_FUNLOCK    0x00000100              /* vnode was unlocked by flock(2) */
+#define NOTE_LEASE_DOWNGRADE 0x00000200         /* lease downgrade requested */
+#define NOTE_LEASE_RELEASE 0x00000400           /* lease release requested */
 
 /*
  * data/hint fflags for EVFILT_PROC, shared with userspace
@@ -284,7 +284,6 @@ enum {
 #define NOTE_EXIT_MEMORY                0x00020000
 #define NOTE_EXIT_CSERROR               0x00040000
 
-
 /*
  * data/hint fflags for EVFILT_VM, shared with userspace.
  */
@@ -292,7 +291,6 @@ enum {
 #define NOTE_VM_PRESSURE_TERMINATE              0x40000000              /* will quit on memory pressure, possibly after cleaning up dirty state */
 #define NOTE_VM_PRESSURE_SUDDEN_TERMINATE       0x20000000              /* will quit immediately on memory pressure */
 #define NOTE_VM_ERROR                           0x10000000              /* there was an error */
-
 
 /*
  * data/hint fflags for EVFILT_TIMER, shared with userspace.
@@ -319,7 +317,6 @@ enum {
  */
 #define NOTE_MACHTIME   0x00000100              /* data is mach absolute time units */
 /* timeout uses the mach absolute time epoch */
-
 
 /*
  * data/hint fflags for EVFILT_MACHPORT, shared with userspace.
@@ -364,14 +361,9 @@ enum {
 #define NOTE_CHILD      0x00000004              /* am a child process */
 
 
-
-/* Temporay solution for BootX to use inode.h till kqueue moves to vfs layer */
-#include <sys/queue.h>
+/* Temporary solution for BootX to use inode.h till kqueue moves to vfs layer */
 struct knote;
 SLIST_HEAD(klist, knote);
-
-
-#include <sys/types.h>
 
 struct timespec;
 
@@ -386,7 +378,6 @@ int     kevent64(int kq,
     struct kevent64_s *eventlist, int nevents,
     unsigned int flags,
     const struct timespec *timeout);
-
 
 __END_DECLS
 

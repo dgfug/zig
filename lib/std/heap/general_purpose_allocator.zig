@@ -105,23 +105,8 @@ const StackTrace = std.builtin.StackTrace;
 /// Integer type for pointing to slots in a small allocation
 const SlotIndex = std.meta.Int(.unsigned, math.log2(page_size) + 1);
 
-const sys_can_stack_trace = switch (builtin.cpu.arch) {
-    // Observed to go into an infinite loop.
-    // TODO: Make this work.
-    .mips,
-    .mipsel,
-    => false,
-
-    // `@returnAddress()` in LLVM 10 gives
-    // "Non-Emscripten WebAssembly hasn't implemented __builtin_return_address".
-    .wasm32,
-    .wasm64,
-    => builtin.os.tag == .emscripten,
-
-    else => true,
-};
-const default_test_stack_trace_frames: usize = if (builtin.is_test) 8 else 4;
-const default_sys_stack_trace_frames: usize = if (sys_can_stack_trace) default_test_stack_trace_frames else 0;
+const default_test_stack_trace_frames: usize = if (builtin.is_test) 10 else 6;
+const default_sys_stack_trace_frames: usize = if (std.debug.sys_can_stack_trace) default_test_stack_trace_frames else 0;
 const default_stack_trace_frames: usize = switch (builtin.mode) {
     .Debug => default_sys_stack_trace_frames,
     else => 0,
@@ -145,13 +130,13 @@ pub const Config = struct {
     thread_safe: bool = !builtin.single_threaded,
 
     /// What type of mutex you'd like to use, for thread safety.
-    /// when specfied, the mutex type must have the same shape as `std.Thread.Mutex` and
-    /// `std.Thread.Mutex.Dummy`, and have no required fields. Specifying this field causes
+    /// when specified, the mutex type must have the same shape as `std.Thread.Mutex` and
+    /// `DummyMutex`, and have no required fields. Specifying this field causes
     /// the `thread_safe` field to be ignored.
     ///
     /// when null (default):
     /// * the mutex type defaults to `std.Thread.Mutex` when thread_safe is enabled.
-    /// * the mutex type defaults to `std.Thread.Mutex.Dummy` otherwise.
+    /// * the mutex type defaults to `DummyMutex` otherwise.
     MutexType: ?type = null,
 
     /// This is a temporary debugging trick you can use to turn segfaults into more helpful
@@ -170,17 +155,18 @@ pub const Config = struct {
     verbose_log: bool = false,
 };
 
+pub const Check = enum { ok, leak };
+
+/// Default initialization of this struct is deprecated; use `.init` instead.
 pub fn GeneralPurposeAllocator(comptime config: Config) type {
     return struct {
-        allocator: Allocator = Allocator{
-            .allocFn = alloc,
-            .resizeFn = resize,
-        },
-        backing_allocator: *Allocator = std.heap.page_allocator,
-        buckets: [small_bucket_count]?*BucketHeader = [1]?*BucketHeader{null} ** small_bucket_count,
+        backing_allocator: Allocator = std.heap.page_allocator,
+        buckets: [small_bucket_count]Buckets = [1]Buckets{Buckets{}} ** small_bucket_count,
+        cur_buckets: [small_bucket_count]?*BucketHeader = [1]?*BucketHeader{null} ** small_bucket_count,
         large_allocations: LargeAllocTable = .{},
-        empty_buckets: if (config.retain_metadata) ?*BucketHeader else void =
-            if (config.retain_metadata) null else {},
+        empty_buckets: if (config.retain_metadata) Buckets else void =
+            if (config.retain_metadata) Buckets{} else {},
+        bucket_node_pool: std.heap.MemoryPool(Buckets.Node) = std.heap.MemoryPool(Buckets.Node).init(std.heap.page_allocator),
 
         total_requested_bytes: @TypeOf(total_requested_bytes_init) = total_requested_bytes_init,
         requested_memory_limit: @TypeOf(requested_memory_limit_init) = requested_memory_limit_init,
@@ -188,6 +174,16 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         mutex: @TypeOf(mutex_init) = mutex_init,
 
         const Self = @This();
+
+        /// The initial state of a `GeneralPurposeAllocator`, containing no allocations and backed by the system page allocator.
+        pub const init: Self = .{
+            .backing_allocator = std.heap.page_allocator,
+            .buckets = [1]Buckets{.{}} ** small_bucket_count,
+            .cur_buckets = [1]?*BucketHeader{null} ** small_bucket_count,
+            .large_allocations = .{},
+            .empty_buckets = if (config.retain_metadata) .{} else {},
+            .bucket_node_pool = .init(std.heap.page_allocator),
+        };
 
         const total_requested_bytes_init = if (config.enable_memory_limit) @as(usize, 0) else {};
         const requested_memory_limit_init = if (config.enable_memory_limit) @as(usize, math.maxInt(usize)) else {};
@@ -197,7 +193,12 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         else if (config.thread_safe)
             std.Thread.Mutex{}
         else
-            std.Thread.Mutex.Dummy{};
+            DummyMutex{};
+
+        const DummyMutex = struct {
+            fn lock(_: *DummyMutex) void {}
+            fn unlock(_: *DummyMutex) void {}
+        };
 
         const stack_n = config.stack_trace_frames;
         const one_trace_size = @sizeOf(usize) * stack_n;
@@ -207,13 +208,21 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
 
         const small_bucket_count = math.log2(page_size);
         const largest_bucket_object_size = 1 << (small_bucket_count - 1);
+        const LargestSizeClassInt = std.math.IntFittingRange(0, largest_bucket_object_size);
+
+        const bucketCompare = struct {
+            fn compare(a: *BucketHeader, b: *BucketHeader) std.math.Order {
+                return std.math.order(@intFromPtr(a.page), @intFromPtr(b.page));
+            }
+        }.compare;
+        const Buckets = std.Treap(*BucketHeader, bucketCompare);
 
         const LargeAlloc = struct {
             bytes: []u8,
             requested_size: if (config.enable_memory_limit) usize else void,
             stack_addresses: [trace_n][stack_n]usize,
             freed: if (config.retain_metadata) bool else void,
-            ptr_align: if (config.never_unmap and config.retain_metadata) u29 else void,
+            log2_ptr_align: if (config.never_unmap and config.retain_metadata) u8 else void,
 
             const trace_n = if (config.retain_metadata) traces_per_slot else 1;
 
@@ -222,8 +231,8 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             }
 
             fn getStackTrace(self: *LargeAlloc, trace_kind: TraceKind) std.builtin.StackTrace {
-                assert(@enumToInt(trace_kind) < trace_n);
-                const stack_addresses = &self.stack_addresses[@enumToInt(trace_kind)];
+                assert(@intFromEnum(trace_kind) < trace_n);
+                const stack_addresses = &self.stack_addresses[@intFromEnum(trace_kind)];
                 var len: usize = 0;
                 while (len < stack_n and stack_addresses[len] != 0) {
                     len += 1;
@@ -235,8 +244,8 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             }
 
             fn captureStackTrace(self: *LargeAlloc, ret_addr: usize, trace_kind: TraceKind) void {
-                assert(@enumToInt(trace_kind) < trace_n);
-                const stack_addresses = &self.stack_addresses[@enumToInt(trace_kind)];
+                assert(@intFromEnum(trace_kind) < trace_n);
+                const stack_addresses = &self.stack_addresses[@intFromEnum(trace_kind)];
                 collectStackTrace(ret_addr, stack_addresses);
             }
         };
@@ -245,17 +254,34 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         // Bucket: In memory, in order:
         // * BucketHeader
         // * bucket_used_bits: [N]u8, // 1 bit for every slot; 1 byte for every 8 slots
+        // -- below only exists when config.safety is true --
+        // * requested_sizes: [N]LargestSizeClassInt // 1 int for every slot
+        // * log2_ptr_aligns: [N]u8 // 1 byte for every slot
+        // -- above only exists when config.safety is true --
         // * stack_trace_addresses: [N]usize, // traces_per_slot for every allocation
 
         const BucketHeader = struct {
-            prev: *BucketHeader,
-            next: *BucketHeader,
             page: [*]align(page_size) u8,
             alloc_cursor: SlotIndex,
             used_count: SlotIndex,
 
             fn usedBits(bucket: *BucketHeader, index: usize) *u8 {
-                return @intToPtr(*u8, @ptrToInt(bucket) + @sizeOf(BucketHeader) + index);
+                return @as(*u8, @ptrFromInt(@intFromPtr(bucket) + @sizeOf(BucketHeader) + index));
+            }
+
+            fn requestedSizes(bucket: *BucketHeader, size_class: usize) []LargestSizeClassInt {
+                if (!config.safety) @compileError("requested size is only stored when safety is enabled");
+                const start_ptr = @as([*]u8, @ptrCast(bucket)) + bucketRequestedSizesStart(size_class);
+                const sizes = @as([*]LargestSizeClassInt, @ptrCast(@alignCast(start_ptr)));
+                const slot_count = @divExact(page_size, size_class);
+                return sizes[0..slot_count];
+            }
+
+            fn log2PtrAligns(bucket: *BucketHeader, size_class: usize) []u8 {
+                if (!config.safety) @compileError("requested size is only stored when safety is enabled");
+                const aligns_ptr = @as([*]u8, @ptrCast(bucket)) + bucketAlignsStart(size_class);
+                const slot_count = @divExact(page_size, size_class);
+                return aligns_ptr[0..slot_count];
             }
 
             fn stackTracePtr(
@@ -264,10 +290,10 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                 slot_index: SlotIndex,
                 trace_kind: TraceKind,
             ) *[stack_n]usize {
-                const start_ptr = @ptrCast([*]u8, bucket) + bucketStackFramesStart(size_class);
+                const start_ptr = @as([*]u8, @ptrCast(bucket)) + bucketStackFramesStart(size_class);
                 const addr = start_ptr + one_trace_size * traces_per_slot * slot_index +
-                    @enumToInt(trace_kind) * @as(usize, one_trace_size);
-                return @ptrCast(*[stack_n]usize, @alignCast(@alignOf(usize), addr));
+                    @intFromEnum(trace_kind) * @as(usize, one_trace_size);
+                return @ptrCast(@alignCast(addr));
             }
 
             fn captureStackTrace(
@@ -282,7 +308,24 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                 const stack_addresses = bucket.stackTracePtr(size_class, slot_index, trace_kind);
                 collectStackTrace(ret_addr, stack_addresses);
             }
+
+            /// Only valid for buckets within `empty_buckets`, and relies on the `alloc_cursor`
+            /// of empty buckets being set to `slot_count` when they are added to `empty_buckets`
+            fn emptyBucketSizeClass(bucket: *BucketHeader) usize {
+                return @divExact(page_size, bucket.alloc_cursor);
+            }
         };
+
+        pub fn allocator(self: *Self) Allocator {
+            return .{
+                .ptr = self,
+                .vtable = &.{
+                    .alloc = alloc,
+                    .resize = resize,
+                    .free = free,
+                },
+            };
+        }
 
         fn bucketStackTrace(
             bucket: *BucketHeader,
@@ -301,9 +344,29 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             };
         }
 
-        fn bucketStackFramesStart(size_class: usize) usize {
+        fn bucketRequestedSizesStart(size_class: usize) usize {
+            if (!config.safety) @compileError("requested sizes are not stored unless safety is enabled");
             return mem.alignForward(
+                usize,
                 @sizeOf(BucketHeader) + usedBitsCount(size_class),
+                @alignOf(LargestSizeClassInt),
+            );
+        }
+
+        fn bucketAlignsStart(size_class: usize) usize {
+            if (!config.safety) @compileError("requested sizes are not stored unless safety is enabled");
+            const slot_count = @divExact(page_size, size_class);
+            return bucketRequestedSizesStart(size_class) + (@sizeOf(LargestSizeClassInt) * slot_count);
+        }
+
+        fn bucketStackFramesStart(size_class: usize) usize {
+            const unaligned_start = if (config.safety) blk: {
+                const slot_count = @divExact(page_size, size_class);
+                break :blk bucketAlignsStart(size_class) + slot_count;
+            } else @sizeOf(BucketHeader) + usedBitsCount(size_class);
+            return mem.alignForward(
+                usize,
+                unaligned_start,
                 @alignOf(usize),
             );
         }
@@ -331,13 +394,13 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                 if (used_byte != 0) {
                     var bit_index: u3 = 0;
                     while (true) : (bit_index += 1) {
-                        const is_used = @truncate(u1, used_byte >> bit_index) != 0;
+                        const is_used = @as(u1, @truncate(used_byte >> bit_index)) != 0;
                         if (is_used) {
-                            const slot_index = @intCast(SlotIndex, used_bits_byte * 8 + bit_index);
+                            const slot_index = @as(SlotIndex, @intCast(used_bits_byte * 8 + bit_index));
                             const stack_trace = bucketStackTrace(bucket, size_class, slot_index, .alloc);
                             const addr = bucket.page + slot_index * size_class;
-                            log.err("memory address 0x{x} leaked: {s}", .{
-                                @ptrToInt(addr), stack_trace,
+                            log.err("memory address 0x{x} leaked: {}", .{
+                                @intFromPtr(addr), stack_trace,
                             });
                             leaks = true;
                         }
@@ -352,23 +415,23 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         /// Emits log messages for leaks and then returns whether there were any leaks.
         pub fn detectLeaks(self: *Self) bool {
             var leaks = false;
-            for (self.buckets) |optional_bucket, bucket_i| {
-                const first_bucket = optional_bucket orelse continue;
-                const size_class = @as(usize, 1) << @intCast(math.Log2Int(usize), bucket_i);
+
+            for (&self.buckets, 0..) |*buckets, bucket_i| {
+                if (buckets.root == null) continue;
+                const size_class = @as(usize, 1) << @as(math.Log2Int(usize), @intCast(bucket_i));
                 const used_bits_count = usedBitsCount(size_class);
-                var bucket = first_bucket;
-                while (true) {
+                var it = buckets.inorderIterator();
+                while (it.next()) |node| {
+                    const bucket = node.key;
                     leaks = detectLeaksInBucket(bucket, size_class, used_bits_count) or leaks;
-                    bucket = bucket.next;
-                    if (bucket == first_bucket)
-                        break;
                 }
             }
             var it = self.large_allocations.valueIterator();
             while (it.next()) |large_alloc| {
                 if (config.retain_metadata and large_alloc.freed) continue;
-                log.err("memory address 0x{x} leaked: {s}", .{
-                    @ptrToInt(large_alloc.bytes.ptr), large_alloc.getStackTrace(.alloc),
+                const stack_trace = large_alloc.getStackTrace(.alloc);
+                log.err("memory address 0x{x} leaked: {}", .{
+                    @intFromPtr(large_alloc.bytes.ptr), stack_trace,
                 });
                 leaks = true;
             }
@@ -377,7 +440,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
 
         fn freeBucket(self: *Self, bucket: *BucketHeader, size_class: usize) void {
             const bucket_size = bucketSize(size_class);
-            const bucket_slice = @ptrCast([*]align(@alignOf(BucketHeader)) u8, bucket)[0..bucket_size];
+            const bucket_slice = @as([*]align(@alignOf(BucketHeader)) u8, @ptrCast(bucket))[0..bucket_size];
             self.backing_allocator.free(bucket_slice);
         }
 
@@ -388,56 +451,58 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                     var it = self.large_allocations.iterator();
                     while (it.next()) |large| {
                         if (large.value_ptr.freed) {
-                            _ = self.backing_allocator.resizeFn(self.backing_allocator, large.value_ptr.bytes, large.value_ptr.ptr_align, 0, 0, @returnAddress()) catch unreachable;
+                            self.backing_allocator.rawFree(large.value_ptr.bytes, large.value_ptr.log2_ptr_align, @returnAddress());
                         }
                     }
                 }
                 // free retained metadata for small allocations
-                if (self.empty_buckets) |first_bucket| {
-                    var bucket = first_bucket;
-                    while (true) {
-                        const prev = bucket.prev;
-                        if (config.never_unmap) {
-                            // free page that was intentionally leaked by never_unmap
-                            self.backing_allocator.free(bucket.page[0..page_size]);
-                        }
-                        // alloc_cursor was set to slot count when bucket added to empty_buckets
-                        self.freeBucket(bucket, @divExact(page_size, bucket.alloc_cursor));
-                        bucket = prev;
-                        if (bucket == first_bucket)
-                            break;
+                while (self.empty_buckets.getMin()) |node| {
+                    // remove the node from the tree before destroying it
+                    var entry = self.empty_buckets.getEntryForExisting(node);
+                    entry.set(null);
+
+                    var bucket = node.key;
+                    if (config.never_unmap) {
+                        // free page that was intentionally leaked by never_unmap
+                        self.backing_allocator.free(bucket.page[0..page_size]);
                     }
-                    self.empty_buckets = null;
+                    // alloc_cursor was set to slot count when bucket added to empty_buckets
+                    self.freeBucket(bucket, bucket.emptyBucketSizeClass());
+                    self.bucket_node_pool.destroy(node);
+                }
+                self.empty_buckets.root = null;
+            }
+        }
+
+        pub fn flushRetainedMetadata(self: *Self) void {
+            if (!config.retain_metadata) {
+                @compileError("'flushRetainedMetadata' requires 'config.retain_metadata = true'");
+            }
+            self.freeRetainedMetadata();
+            // also remove entries from large_allocations
+            var it = self.large_allocations.iterator();
+            while (it.next()) |large| {
+                if (large.value_ptr.freed) {
+                    _ = self.large_allocations.remove(@intFromPtr(large.value_ptr.bytes.ptr));
                 }
             }
         }
 
-        pub usingnamespace if (config.retain_metadata) struct {
-            pub fn flushRetainedMetadata(self: *Self) void {
-                self.freeRetainedMetadata();
-                // also remove entries from large_allocations
-                var it = self.large_allocations.iterator();
-                while (it.next()) |large| {
-                    if (large.value_ptr.freed) {
-                        _ = self.large_allocations.remove(@ptrToInt(large.value_ptr.bytes.ptr));
-                    }
-                }
-            }
-        } else struct {};
-
-        pub fn deinit(self: *Self) bool {
+        /// Returns `Check.leak` if there were leaks; `Check.ok` otherwise.
+        pub fn deinit(self: *Self) Check {
             const leaks = if (config.safety) self.detectLeaks() else false;
             if (config.retain_metadata) {
                 self.freeRetainedMetadata();
             }
             self.large_allocations.deinit(self.backing_allocator);
+            self.bucket_node_pool.deinit();
             self.* = undefined;
-            return leaks;
+            return @as(Check, @enumFromInt(@intFromBool(leaks)));
         }
 
         fn collectStackTrace(first_trace_addr: usize, addresses: *[stack_n]usize) void {
             if (stack_n == 0) return;
-            mem.set(usize, addresses, 0);
+            @memset(addresses, 0);
             var stack_trace = StackTrace{
                 .instruction_addresses = addresses,
                 .index = 0,
@@ -452,60 +517,61 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                 .index = 0,
             };
             std.debug.captureStackTrace(ret_addr, &second_free_stack_trace);
-            log.err("Double free detected. Allocation: {s} First free: {s} Second free: {s}", .{
+            log.err("Double free detected. Allocation: {} First free: {} Second free: {}", .{
                 alloc_stack_trace, free_stack_trace, second_free_stack_trace,
             });
         }
 
-        fn allocSlot(self: *Self, size_class: usize, trace_addr: usize) Error![*]u8 {
+        const Slot = struct {
+            bucket: *BucketHeader,
+            slot_index: usize,
+            ptr: [*]u8,
+        };
+
+        fn allocSlot(self: *Self, size_class: usize, trace_addr: usize) Error!Slot {
             const bucket_index = math.log2(size_class);
-            const first_bucket = self.buckets[bucket_index] orelse try self.createBucket(
-                size_class,
-                bucket_index,
-            );
-            var bucket = first_bucket;
+            var buckets = &self.buckets[bucket_index];
             const slot_count = @divExact(page_size, size_class);
-            while (bucket.alloc_cursor == slot_count) {
-                const prev_bucket = bucket;
-                bucket = prev_bucket.next;
-                if (bucket == first_bucket) {
-                    // make a new one
-                    bucket = try self.createBucket(size_class, bucket_index);
-                    bucket.prev = prev_bucket;
-                    bucket.next = prev_bucket.next;
-                    prev_bucket.next = bucket;
-                    bucket.next.prev = bucket;
-                }
+            if (self.cur_buckets[bucket_index] == null or self.cur_buckets[bucket_index].?.alloc_cursor == slot_count) {
+                const new_bucket = try self.createBucket(size_class);
+                errdefer self.freeBucket(new_bucket, size_class);
+                const node = try self.bucket_node_pool.create();
+                node.key = new_bucket;
+                var entry = buckets.getEntryFor(new_bucket);
+                std.debug.assert(entry.node == null);
+                entry.set(node);
+                self.cur_buckets[bucket_index] = node.key;
             }
-            // change the allocator's current bucket to be this one
-            self.buckets[bucket_index] = bucket;
+            const bucket = self.cur_buckets[bucket_index].?;
 
             const slot_index = bucket.alloc_cursor;
             bucket.alloc_cursor += 1;
 
-            var used_bits_byte = bucket.usedBits(slot_index / 8);
-            const used_bit_index: u3 = @intCast(u3, slot_index % 8); // TODO cast should be unnecessary
+            const used_bits_byte = bucket.usedBits(slot_index / 8);
+            const used_bit_index: u3 = @as(u3, @intCast(slot_index % 8)); // TODO cast should be unnecessary
             used_bits_byte.* |= (@as(u8, 1) << used_bit_index);
             bucket.used_count += 1;
             bucket.captureStackTrace(trace_addr, size_class, slot_index, .alloc);
-            return bucket.page + slot_index * size_class;
+            return .{
+                .bucket = bucket,
+                .slot_index = slot_index,
+                .ptr = bucket.page + slot_index * size_class,
+            };
         }
 
         fn searchBucket(
-            bucket_list: ?*BucketHeader,
+            buckets: *Buckets,
             addr: usize,
+            current_bucket: ?*BucketHeader,
         ) ?*BucketHeader {
-            const first_bucket = bucket_list orelse return null;
-            var bucket = first_bucket;
-            while (true) {
-                const in_bucket_range = (addr >= @ptrToInt(bucket.page) and
-                    addr < @ptrToInt(bucket.page) + page_size);
-                if (in_bucket_range) return bucket;
-                bucket = bucket.prev;
-                if (bucket == first_bucket) {
-                    return null;
-                }
+            const search_page: [*]align(page_size) u8 = @ptrFromInt(mem.alignBackward(usize, addr, page_size));
+            if (current_bucket != null and current_bucket.?.page == search_page) {
+                return current_bucket;
             }
+            var search_header: BucketHeader = undefined;
+            search_header.page = search_page;
+            const entry = buckets.getEntryFor(&search_header);
+            return if (entry.node) |node| node.key else null;
         }
 
         /// This function assumes the object is in the large object storage regardless
@@ -513,12 +579,11 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         fn resizeLarge(
             self: *Self,
             old_mem: []u8,
-            old_align: u29,
+            log2_old_align: u8,
             new_size: usize,
-            len_align: u29,
             ret_addr: usize,
-        ) Error!usize {
-            const entry = self.large_allocations.getEntry(@ptrToInt(old_mem.ptr)) orelse {
+        ) bool {
+            const entry = self.large_allocations.getEntry(@intFromPtr(old_mem.ptr)) orelse {
                 if (config.safety) {
                     @panic("Invalid free");
                 } else {
@@ -529,9 +594,6 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             if (config.retain_metadata and entry.value_ptr.freed) {
                 if (config.safety) {
                     reportDoubleFree(ret_addr, entry.value_ptr.getStackTrace(.alloc), entry.value_ptr.getStackTrace(.free));
-                    // Recoverable if this is a free.
-                    if (new_size == 0)
-                        return @as(usize, 0);
                     @panic("Unrecoverable double free");
                 } else {
                     unreachable;
@@ -545,7 +607,7 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                     .index = 0,
                 };
                 std.debug.captureStackTrace(ret_addr, &free_stack_trace);
-                log.err("Allocation size {d} bytes does not match free size {d}. Allocation: {s} Free: {s}", .{
+                log.err("Allocation size {d} bytes does not match free size {d}. Allocation: {} Free: {}", .{
                     entry.value_ptr.bytes.len,
                     old_mem.len,
                     entry.value_ptr.getStackTrace(.alloc),
@@ -553,42 +615,29 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                 });
             }
 
-            // Do memory limit accounting with requested sizes rather than what backing_allocator returns
-            // because if we want to return error.OutOfMemory, we have to leave allocation untouched, and
-            // that is impossible to guarantee after calling backing_allocator.resizeFn.
+            // Do memory limit accounting with requested sizes rather than what
+            // backing_allocator returns because if we want to return
+            // error.OutOfMemory, we have to leave allocation untouched, and
+            // that is impossible to guarantee after calling
+            // backing_allocator.rawResize.
             const prev_req_bytes = self.total_requested_bytes;
             if (config.enable_memory_limit) {
                 const new_req_bytes = prev_req_bytes + new_size - entry.value_ptr.requested_size;
                 if (new_req_bytes > prev_req_bytes and new_req_bytes > self.requested_memory_limit) {
-                    return error.OutOfMemory;
+                    return false;
                 }
                 self.total_requested_bytes = new_req_bytes;
             }
-            errdefer if (config.enable_memory_limit) {
-                self.total_requested_bytes = prev_req_bytes;
-            };
 
-            const result_len = if (config.never_unmap and new_size == 0)
-                0
-            else
-                try self.backing_allocator.resizeFn(self.backing_allocator, old_mem, old_align, new_size, len_align, ret_addr);
+            if (!self.backing_allocator.rawResize(old_mem, log2_old_align, new_size, ret_addr)) {
+                if (config.enable_memory_limit) {
+                    self.total_requested_bytes = prev_req_bytes;
+                }
+                return false;
+            }
 
             if (config.enable_memory_limit) {
                 entry.value_ptr.requested_size = new_size;
-            }
-
-            if (result_len == 0) {
-                if (config.verbose_log) {
-                    log.info("large free {d} bytes at {*}", .{ old_mem.len, old_mem.ptr });
-                }
-
-                if (!config.retain_metadata) {
-                    assert(self.large_allocations.remove(@ptrToInt(old_mem.ptr)));
-                } else {
-                    entry.value_ptr.freed = true;
-                    entry.value_ptr.captureStackTrace(ret_addr, .free);
-                }
-                return 0;
             }
 
             if (config.verbose_log) {
@@ -596,9 +645,69 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                     old_mem.len, old_mem.ptr, new_size,
                 });
             }
-            entry.value_ptr.bytes = old_mem.ptr[0..result_len];
+            entry.value_ptr.bytes = old_mem.ptr[0..new_size];
             entry.value_ptr.captureStackTrace(ret_addr, .alloc);
-            return result_len;
+            return true;
+        }
+
+        /// This function assumes the object is in the large object storage regardless
+        /// of the parameters.
+        fn freeLarge(
+            self: *Self,
+            old_mem: []u8,
+            log2_old_align: u8,
+            ret_addr: usize,
+        ) void {
+            const entry = self.large_allocations.getEntry(@intFromPtr(old_mem.ptr)) orelse {
+                if (config.safety) {
+                    @panic("Invalid free");
+                } else {
+                    unreachable;
+                }
+            };
+
+            if (config.retain_metadata and entry.value_ptr.freed) {
+                if (config.safety) {
+                    reportDoubleFree(ret_addr, entry.value_ptr.getStackTrace(.alloc), entry.value_ptr.getStackTrace(.free));
+                    return;
+                } else {
+                    unreachable;
+                }
+            }
+
+            if (config.safety and old_mem.len != entry.value_ptr.bytes.len) {
+                var addresses: [stack_n]usize = [1]usize{0} ** stack_n;
+                var free_stack_trace = StackTrace{
+                    .instruction_addresses = &addresses,
+                    .index = 0,
+                };
+                std.debug.captureStackTrace(ret_addr, &free_stack_trace);
+                log.err("Allocation size {d} bytes does not match free size {d}. Allocation: {} Free: {}", .{
+                    entry.value_ptr.bytes.len,
+                    old_mem.len,
+                    entry.value_ptr.getStackTrace(.alloc),
+                    free_stack_trace,
+                });
+            }
+
+            if (!config.never_unmap) {
+                self.backing_allocator.rawFree(old_mem, log2_old_align, ret_addr);
+            }
+
+            if (config.enable_memory_limit) {
+                self.total_requested_bytes -= entry.value_ptr.requested_size;
+            }
+
+            if (config.verbose_log) {
+                log.info("large free {d} bytes at {*}", .{ old_mem.len, old_mem.ptr });
+            }
+
+            if (!config.retain_metadata) {
+                assert(self.large_allocations.remove(@intFromPtr(old_mem.ptr)));
+            } else {
+                entry.value_ptr.freed = true;
+                entry.value_ptr.captureStackTrace(ret_addr, .free);
+            }
         }
 
         pub fn setRequestedMemoryLimit(self: *Self, limit: usize) void {
@@ -606,40 +715,38 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
         }
 
         fn resize(
-            allocator: *Allocator,
+            ctx: *anyopaque,
             old_mem: []u8,
-            old_align: u29,
+            log2_old_align_u8: u8,
             new_size: usize,
-            len_align: u29,
             ret_addr: usize,
-        ) Error!usize {
-            const self = @fieldParentPtr(Self, "allocator", allocator);
-
-            const held = self.mutex.acquire();
-            defer held.release();
+        ) bool {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            const log2_old_align = @as(Allocator.Log2Align, @intCast(log2_old_align_u8));
+            self.mutex.lock();
+            defer self.mutex.unlock();
 
             assert(old_mem.len != 0);
 
-            const aligned_size = math.max(old_mem.len, old_align);
+            const aligned_size = @max(old_mem.len, @as(usize, 1) << log2_old_align);
             if (aligned_size > largest_bucket_object_size) {
-                return self.resizeLarge(old_mem, old_align, new_size, len_align, ret_addr);
+                return self.resizeLarge(old_mem, log2_old_align, new_size, ret_addr);
             }
             const size_class_hint = math.ceilPowerOfTwoAssert(usize, aligned_size);
 
             var bucket_index = math.log2(size_class_hint);
             var size_class: usize = size_class_hint;
             const bucket = while (bucket_index < small_bucket_count) : (bucket_index += 1) {
-                if (searchBucket(self.buckets[bucket_index], @ptrToInt(old_mem.ptr))) |bucket| {
-                    // move bucket to head of list to optimize search for nearby allocations
-                    self.buckets[bucket_index] = bucket;
+                if (searchBucket(&self.buckets[bucket_index], @intFromPtr(old_mem.ptr), self.cur_buckets[bucket_index])) |bucket| {
                     break bucket;
                 }
                 size_class *= 2;
             } else blk: {
                 if (config.retain_metadata) {
-                    if (!self.large_allocations.contains(@ptrToInt(old_mem.ptr))) {
+                    if (!self.large_allocations.contains(@intFromPtr(old_mem.ptr))) {
                         // object not in active buckets or a large allocation, so search empty buckets
-                        if (searchBucket(self.empty_buckets, @ptrToInt(old_mem.ptr))) |bucket| {
+                        if (searchBucket(&self.empty_buckets, @intFromPtr(old_mem.ptr), null)) |bucket| {
+                            size_class = bucket.emptyBucketSizeClass();
                             // bucket is empty so is_used below will always be false and we exit there
                             break :blk bucket;
                         } else {
@@ -647,20 +754,17 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                         }
                     }
                 }
-                return self.resizeLarge(old_mem, old_align, new_size, len_align, ret_addr);
+                return self.resizeLarge(old_mem, log2_old_align, new_size, ret_addr);
             };
-            const byte_offset = @ptrToInt(old_mem.ptr) - @ptrToInt(bucket.page);
-            const slot_index = @intCast(SlotIndex, byte_offset / size_class);
+            const byte_offset = @intFromPtr(old_mem.ptr) - @intFromPtr(bucket.page);
+            const slot_index = @as(SlotIndex, @intCast(byte_offset / size_class));
             const used_byte_index = slot_index / 8;
-            const used_bit_index = @intCast(u3, slot_index % 8);
+            const used_bit_index = @as(u3, @intCast(slot_index % 8));
             const used_byte = bucket.usedBits(used_byte_index);
-            const is_used = @truncate(u1, used_byte.* >> used_bit_index) != 0;
+            const is_used = @as(u1, @truncate(used_byte.* >> used_bit_index)) != 0;
             if (!is_used) {
                 if (config.safety) {
                     reportDoubleFree(ret_addr, bucketStackTrace(bucket, size_class, slot_index, .alloc), bucketStackTrace(bucket, size_class, slot_index, .free));
-                    // Recoverable if this is a free.
-                    if (new_size == 0)
-                        return @as(usize, 0);
                     @panic("Unrecoverable double free");
                 } else {
                     unreachable;
@@ -668,78 +772,196 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             }
 
             // Definitely an in-use small alloc now.
+            if (config.safety) {
+                const requested_size = bucket.requestedSizes(size_class)[slot_index];
+                if (requested_size == 0) @panic("Invalid free");
+                const log2_ptr_align = bucket.log2PtrAligns(size_class)[slot_index];
+                if (old_mem.len != requested_size or log2_old_align != log2_ptr_align) {
+                    var addresses: [stack_n]usize = [1]usize{0} ** stack_n;
+                    var free_stack_trace = StackTrace{
+                        .instruction_addresses = &addresses,
+                        .index = 0,
+                    };
+                    std.debug.captureStackTrace(ret_addr, &free_stack_trace);
+                    if (old_mem.len != requested_size) {
+                        log.err("Allocation size {d} bytes does not match resize size {d}. Allocation: {} Resize: {}", .{
+                            requested_size,
+                            old_mem.len,
+                            bucketStackTrace(bucket, size_class, slot_index, .alloc),
+                            free_stack_trace,
+                        });
+                    }
+                    if (log2_old_align != log2_ptr_align) {
+                        log.err("Allocation alignment {d} does not match resize alignment {d}. Allocation: {} Resize: {}", .{
+                            @as(usize, 1) << @as(math.Log2Int(usize), @intCast(log2_ptr_align)),
+                            @as(usize, 1) << @as(math.Log2Int(usize), @intCast(log2_old_align)),
+                            bucketStackTrace(bucket, size_class, slot_index, .alloc),
+                            free_stack_trace,
+                        });
+                    }
+                }
+            }
             const prev_req_bytes = self.total_requested_bytes;
             if (config.enable_memory_limit) {
                 const new_req_bytes = prev_req_bytes + new_size - old_mem.len;
                 if (new_req_bytes > prev_req_bytes and new_req_bytes > self.requested_memory_limit) {
-                    return error.OutOfMemory;
+                    return false;
                 }
                 self.total_requested_bytes = new_req_bytes;
             }
-            errdefer if (config.enable_memory_limit) {
-                self.total_requested_bytes = prev_req_bytes;
-            };
 
-            if (new_size == 0) {
-                // Capture stack trace to be the "first free", in case a double free happens.
-                bucket.captureStackTrace(ret_addr, size_class, slot_index, .free);
-
-                used_byte.* &= ~(@as(u8, 1) << used_bit_index);
-                bucket.used_count -= 1;
-                if (bucket.used_count == 0) {
-                    if (bucket.next == bucket) {
-                        // it's the only bucket and therefore the current one
-                        self.buckets[bucket_index] = null;
-                    } else {
-                        bucket.next.prev = bucket.prev;
-                        bucket.prev.next = bucket.next;
-                        self.buckets[bucket_index] = bucket.prev;
-                    }
-                    if (!config.never_unmap) {
-                        self.backing_allocator.free(bucket.page[0..page_size]);
-                    }
-                    if (!config.retain_metadata) {
-                        self.freeBucket(bucket, size_class);
-                    } else {
-                        // move alloc_cursor to end so we can tell size_class later
-                        const slot_count = @divExact(page_size, size_class);
-                        bucket.alloc_cursor = @truncate(SlotIndex, slot_count);
-                        if (self.empty_buckets) |prev_bucket| {
-                            // empty_buckets is ordered newest to oldest through prev so that if
-                            // config.never_unmap is false and backing_allocator reuses freed memory
-                            // then searchBuckets will always return the newer, relevant bucket
-                            bucket.prev = prev_bucket;
-                            bucket.next = prev_bucket.next;
-                            prev_bucket.next = bucket;
-                            bucket.next.prev = bucket;
-                        } else {
-                            bucket.prev = bucket;
-                            bucket.next = bucket;
-                        }
-                        self.empty_buckets = bucket;
-                    }
-                } else {
-                    @memset(old_mem.ptr, undefined, old_mem.len);
-                }
-                if (config.verbose_log) {
-                    log.info("small free {d} bytes at {*}", .{ old_mem.len, old_mem.ptr });
-                }
-                return @as(usize, 0);
-            }
-            const new_aligned_size = math.max(new_size, old_align);
+            const new_aligned_size = @max(new_size, @as(usize, 1) << log2_old_align);
             const new_size_class = math.ceilPowerOfTwoAssert(usize, new_aligned_size);
             if (new_size_class <= size_class) {
                 if (old_mem.len > new_size) {
-                    @memset(old_mem.ptr + new_size, undefined, old_mem.len - new_size);
+                    @memset(old_mem[new_size..], undefined);
                 }
                 if (config.verbose_log) {
                     log.info("small resize {d} bytes at {*} to {d}", .{
                         old_mem.len, old_mem.ptr, new_size,
                     });
                 }
-                return new_size;
+                if (config.safety) {
+                    bucket.requestedSizes(size_class)[slot_index] = @intCast(new_size);
+                }
+                return true;
             }
-            return error.OutOfMemory;
+
+            if (config.enable_memory_limit) {
+                self.total_requested_bytes = prev_req_bytes;
+            }
+            return false;
+        }
+
+        fn free(
+            ctx: *anyopaque,
+            old_mem: []u8,
+            log2_old_align_u8: u8,
+            ret_addr: usize,
+        ) void {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            const log2_old_align = @as(Allocator.Log2Align, @intCast(log2_old_align_u8));
+            self.mutex.lock();
+            defer self.mutex.unlock();
+
+            assert(old_mem.len != 0);
+
+            const aligned_size = @max(old_mem.len, @as(usize, 1) << log2_old_align);
+            if (aligned_size > largest_bucket_object_size) {
+                self.freeLarge(old_mem, log2_old_align, ret_addr);
+                return;
+            }
+            const size_class_hint = math.ceilPowerOfTwoAssert(usize, aligned_size);
+
+            var bucket_index = math.log2(size_class_hint);
+            var size_class: usize = size_class_hint;
+            const bucket = while (bucket_index < small_bucket_count) : (bucket_index += 1) {
+                if (searchBucket(&self.buckets[bucket_index], @intFromPtr(old_mem.ptr), self.cur_buckets[bucket_index])) |bucket| {
+                    break bucket;
+                }
+                size_class *= 2;
+            } else blk: {
+                if (config.retain_metadata) {
+                    if (!self.large_allocations.contains(@intFromPtr(old_mem.ptr))) {
+                        // object not in active buckets or a large allocation, so search empty buckets
+                        if (searchBucket(&self.empty_buckets, @intFromPtr(old_mem.ptr), null)) |bucket| {
+                            size_class = bucket.emptyBucketSizeClass();
+                            // bucket is empty so is_used below will always be false and we exit there
+                            break :blk bucket;
+                        } else {
+                            @panic("Invalid free");
+                        }
+                    }
+                }
+                self.freeLarge(old_mem, log2_old_align, ret_addr);
+                return;
+            };
+            const byte_offset = @intFromPtr(old_mem.ptr) - @intFromPtr(bucket.page);
+            const slot_index = @as(SlotIndex, @intCast(byte_offset / size_class));
+            const used_byte_index = slot_index / 8;
+            const used_bit_index = @as(u3, @intCast(slot_index % 8));
+            const used_byte = bucket.usedBits(used_byte_index);
+            const is_used = @as(u1, @truncate(used_byte.* >> used_bit_index)) != 0;
+            if (!is_used) {
+                if (config.safety) {
+                    reportDoubleFree(ret_addr, bucketStackTrace(bucket, size_class, slot_index, .alloc), bucketStackTrace(bucket, size_class, slot_index, .free));
+                    // Recoverable if this is a free.
+                    return;
+                } else {
+                    unreachable;
+                }
+            }
+
+            // Definitely an in-use small alloc now.
+            if (config.safety) {
+                const requested_size = bucket.requestedSizes(size_class)[slot_index];
+                if (requested_size == 0) @panic("Invalid free");
+                const log2_ptr_align = bucket.log2PtrAligns(size_class)[slot_index];
+                if (old_mem.len != requested_size or log2_old_align != log2_ptr_align) {
+                    var addresses: [stack_n]usize = [1]usize{0} ** stack_n;
+                    var free_stack_trace = StackTrace{
+                        .instruction_addresses = &addresses,
+                        .index = 0,
+                    };
+                    std.debug.captureStackTrace(ret_addr, &free_stack_trace);
+                    if (old_mem.len != requested_size) {
+                        log.err("Allocation size {d} bytes does not match free size {d}. Allocation: {} Free: {}", .{
+                            requested_size,
+                            old_mem.len,
+                            bucketStackTrace(bucket, size_class, slot_index, .alloc),
+                            free_stack_trace,
+                        });
+                    }
+                    if (log2_old_align != log2_ptr_align) {
+                        log.err("Allocation alignment {d} does not match free alignment {d}. Allocation: {} Free: {}", .{
+                            @as(usize, 1) << @as(math.Log2Int(usize), @intCast(log2_ptr_align)),
+                            @as(usize, 1) << @as(math.Log2Int(usize), @intCast(log2_old_align)),
+                            bucketStackTrace(bucket, size_class, slot_index, .alloc),
+                            free_stack_trace,
+                        });
+                    }
+                }
+            }
+
+            if (config.enable_memory_limit) {
+                self.total_requested_bytes -= old_mem.len;
+            }
+
+            // Capture stack trace to be the "first free", in case a double free happens.
+            bucket.captureStackTrace(ret_addr, size_class, slot_index, .free);
+
+            used_byte.* &= ~(@as(u8, 1) << used_bit_index);
+            bucket.used_count -= 1;
+            if (config.safety) {
+                bucket.requestedSizes(size_class)[slot_index] = 0;
+            }
+            if (bucket.used_count == 0) {
+                var entry = self.buckets[bucket_index].getEntryFor(bucket);
+                // save the node for destruction/insertion into in empty_buckets
+                const node = entry.node.?;
+                entry.set(null);
+                if (self.cur_buckets[bucket_index] == bucket) {
+                    self.cur_buckets[bucket_index] = null;
+                }
+                if (!config.never_unmap) {
+                    self.backing_allocator.free(bucket.page[0..page_size]);
+                }
+                if (!config.retain_metadata) {
+                    self.freeBucket(bucket, size_class);
+                    self.bucket_node_pool.destroy(node);
+                } else {
+                    // move alloc_cursor to end so we can tell size_class later
+                    const slot_count = @divExact(page_size, size_class);
+                    bucket.alloc_cursor = @as(SlotIndex, @truncate(slot_count));
+                    var empty_entry = self.empty_buckets.getEntryFor(node.key);
+                    empty_entry.set(node);
+                }
+            } else {
+                @memset(old_mem, undefined);
+            }
+            if (config.verbose_log) {
+                log.info("small free {d} bytes at {*}", .{ old_mem.len, old_mem.ptr });
+            }
         }
 
         // Returns true if an allocation of `size` bytes is within the specified
@@ -755,22 +977,28 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
             return true;
         }
 
-        fn alloc(allocator: *Allocator, len: usize, ptr_align: u29, len_align: u29, ret_addr: usize) Error![]u8 {
-            const self = @fieldParentPtr(Self, "allocator", allocator);
+        fn alloc(ctx: *anyopaque, len: usize, log2_ptr_align: u8, ret_addr: usize) ?[*]u8 {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            self.mutex.lock();
+            defer self.mutex.unlock();
+            if (!self.isAllocationAllowed(len)) return null;
+            return allocInner(self, len, @as(Allocator.Log2Align, @intCast(log2_ptr_align)), ret_addr) catch return null;
+        }
 
-            const held = self.mutex.acquire();
-            defer held.release();
-
-            if (!self.isAllocationAllowed(len)) {
-                return error.OutOfMemory;
-            }
-
-            const new_aligned_size = math.max(len, ptr_align);
+        fn allocInner(
+            self: *Self,
+            len: usize,
+            log2_ptr_align: Allocator.Log2Align,
+            ret_addr: usize,
+        ) Allocator.Error![*]u8 {
+            const new_aligned_size = @max(len, @as(usize, 1) << @as(Allocator.Log2Align, @intCast(log2_ptr_align)));
             if (new_aligned_size > largest_bucket_object_size) {
                 try self.large_allocations.ensureUnusedCapacity(self.backing_allocator, 1);
-                const slice = try self.backing_allocator.allocFn(self.backing_allocator, len, ptr_align, len_align, ret_addr);
+                const ptr = self.backing_allocator.rawAlloc(len, log2_ptr_align, ret_addr) orelse
+                    return error.OutOfMemory;
+                const slice = ptr[0..len];
 
-                const gop = self.large_allocations.getOrPutAssumeCapacity(@ptrToInt(slice.ptr));
+                const gop = self.large_allocations.getOrPutAssumeCapacity(@intFromPtr(slice.ptr));
                 if (config.retain_metadata and !config.never_unmap) {
                     // Backing allocator may be reusing memory that we're retaining metadata for
                     assert(!gop.found_existing or gop.value_ptr.freed);
@@ -784,41 +1012,46 @@ pub fn GeneralPurposeAllocator(comptime config: Config) type {
                 if (config.retain_metadata) {
                     gop.value_ptr.freed = false;
                     if (config.never_unmap) {
-                        gop.value_ptr.ptr_align = ptr_align;
+                        gop.value_ptr.log2_ptr_align = log2_ptr_align;
                     }
                 }
 
                 if (config.verbose_log) {
                     log.info("large alloc {d} bytes at {*}", .{ slice.len, slice.ptr });
                 }
-                return slice;
+                return slice.ptr;
             }
 
             const new_size_class = math.ceilPowerOfTwoAssert(usize, new_aligned_size);
-            const ptr = try self.allocSlot(new_size_class, ret_addr);
-            if (config.verbose_log) {
-                log.info("small alloc {d} bytes at {*}", .{ len, ptr });
+            const slot = try self.allocSlot(new_size_class, ret_addr);
+            if (config.safety) {
+                slot.bucket.requestedSizes(new_size_class)[slot.slot_index] = @intCast(len);
+                slot.bucket.log2PtrAligns(new_size_class)[slot.slot_index] = log2_ptr_align;
             }
-            return ptr[0..len];
+            if (config.verbose_log) {
+                log.info("small alloc {d} bytes at {*}", .{ len, slot.ptr });
+            }
+            return slot.ptr;
         }
 
-        fn createBucket(self: *Self, size_class: usize, bucket_index: usize) Error!*BucketHeader {
-            const page = try self.backing_allocator.allocAdvanced(u8, page_size, page_size, .exact);
+        fn createBucket(self: *Self, size_class: usize) Error!*BucketHeader {
+            const page = try self.backing_allocator.alignedAlloc(u8, page_size, page_size);
             errdefer self.backing_allocator.free(page);
 
             const bucket_size = bucketSize(size_class);
-            const bucket_bytes = try self.backing_allocator.allocAdvanced(u8, @alignOf(BucketHeader), bucket_size, .exact);
-            const ptr = @ptrCast(*BucketHeader, bucket_bytes.ptr);
+            const bucket_bytes = try self.backing_allocator.alignedAlloc(u8, @alignOf(BucketHeader), bucket_size);
+            const ptr = @as(*BucketHeader, @ptrCast(bucket_bytes.ptr));
             ptr.* = BucketHeader{
-                .prev = ptr,
-                .next = ptr,
                 .page = page.ptr,
                 .alloc_cursor = 0,
                 .used_count = 0,
             };
-            self.buckets[bucket_index] = ptr;
             // Set the used bits to all zeroes
-            @memset(@as(*[1]u8, ptr.usedBits(0)), 0, usedBitsCount(size_class));
+            @memset(@as([*]u8, @as(*[1]u8, ptr.usedBits(0)))[0..usedBitsCount(size_class)], 0);
+            if (config.safety) {
+                // Set the requested sizes to zeroes
+                @memset(mem.sliceAsBytes(ptr.requestedSizes(size_class)), 0);
+            }
             return ptr;
         }
     };
@@ -833,8 +1066,8 @@ const test_config = Config{};
 
 test "small allocations - free in same order" {
     var gpa = GeneralPurposeAllocator(test_config){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     var list = std.ArrayList(*u64).init(std.testing.allocator);
     defer list.deinit();
@@ -852,8 +1085,8 @@ test "small allocations - free in same order" {
 
 test "small allocations - free in reverse order" {
     var gpa = GeneralPurposeAllocator(test_config){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     var list = std.ArrayList(*u64).init(std.testing.allocator);
     defer list.deinit();
@@ -871,8 +1104,8 @@ test "small allocations - free in reverse order" {
 
 test "large allocations" {
     var gpa = GeneralPurposeAllocator(test_config){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     const ptr1 = try allocator.alloc(u64, 42768);
     const ptr2 = try allocator.alloc(u64, 52768);
@@ -882,10 +1115,18 @@ test "large allocations" {
     allocator.free(ptr2);
 }
 
+test "very large allocation" {
+    var gpa = GeneralPurposeAllocator(test_config){};
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
+
+    try std.testing.expectError(error.OutOfMemory, allocator.alloc(u8, math.maxInt(usize)));
+}
+
 test "realloc" {
     var gpa = GeneralPurposeAllocator(test_config){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     var slice = try allocator.alignedAlloc(u8, @alignOf(u32), 1);
     defer allocator.free(slice);
@@ -906,21 +1147,23 @@ test "realloc" {
 
 test "shrink" {
     var gpa = GeneralPurposeAllocator(test_config){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     var slice = try allocator.alloc(u8, 20);
     defer allocator.free(slice);
 
-    mem.set(u8, slice, 0x11);
+    @memset(slice, 0x11);
 
-    slice = allocator.shrink(slice, 17);
+    try std.testing.expect(allocator.resize(slice, 17));
+    slice = slice[0..17];
 
     for (slice) |b| {
         try std.testing.expect(b == 0x11);
     }
 
-    slice = allocator.shrink(slice, 16);
+    try std.testing.expect(allocator.resize(slice, 16));
+    slice = slice[0..16];
 
     for (slice) |b| {
         try std.testing.expect(b == 0x11);
@@ -929,8 +1172,8 @@ test "shrink" {
 
 test "large object - grow" {
     var gpa = GeneralPurposeAllocator(test_config){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     var slice1 = try allocator.alloc(u8, page_size * 2 - 20);
     defer allocator.free(slice1);
@@ -947,8 +1190,8 @@ test "large object - grow" {
 
 test "realloc small object to large object" {
     var gpa = GeneralPurposeAllocator(test_config){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     var slice = try allocator.alloc(u8, 70);
     defer allocator.free(slice);
@@ -964,19 +1207,21 @@ test "realloc small object to large object" {
 
 test "shrink large object to large object" {
     var gpa = GeneralPurposeAllocator(test_config){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     var slice = try allocator.alloc(u8, page_size * 2 + 50);
     defer allocator.free(slice);
     slice[0] = 0x12;
     slice[60] = 0x34;
 
-    slice = try allocator.resize(slice, page_size * 2 + 1);
+    if (!allocator.resize(slice, page_size * 2 + 1)) return;
+    slice = slice.ptr[0 .. page_size * 2 + 1];
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[60] == 0x34);
 
-    slice = allocator.shrink(slice, page_size * 2 + 1);
+    try std.testing.expect(allocator.resize(slice, page_size * 2 + 1));
+    slice = slice[0 .. page_size * 2 + 1];
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[60] == 0x34);
 
@@ -987,11 +1232,12 @@ test "shrink large object to large object" {
 
 test "shrink large object to large object with larger alignment" {
     var gpa = GeneralPurposeAllocator(test_config){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     var debug_buffer: [1000]u8 = undefined;
-    const debug_allocator = &std.heap.FixedBufferAllocator.init(&debug_buffer).allocator;
+    var fba = std.heap.FixedBufferAllocator.init(&debug_buffer);
+    const debug_allocator = fba.allocator();
 
     const alloc_size = page_size * 2 + 50;
     var slice = try allocator.alignedAlloc(u8, 16, alloc_size);
@@ -1005,7 +1251,7 @@ test "shrink large object to large object with larger alignment" {
     // alignment. Then we shrink the allocation after the loop, but increase the
     // alignment to the higher one, that we know will force it to realloc.
     var stuff_to_free = std.ArrayList([]align(16) u8).init(debug_allocator);
-    while (mem.isAligned(@ptrToInt(slice.ptr), big_alignment)) {
+    while (mem.isAligned(@intFromPtr(slice.ptr), big_alignment)) {
         try stuff_to_free.append(slice);
         slice = try allocator.alignedAlloc(u8, 16, alloc_size);
     }
@@ -1015,15 +1261,15 @@ test "shrink large object to large object with larger alignment" {
     slice[0] = 0x12;
     slice[60] = 0x34;
 
-    slice = try allocator.reallocAdvanced(slice, big_alignment, alloc_size / 2, .exact);
+    slice = try allocator.reallocAdvanced(slice, big_alignment, alloc_size / 2);
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[60] == 0x34);
 }
 
 test "realloc large object to small object" {
     var gpa = GeneralPurposeAllocator(test_config){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     var slice = try allocator.alloc(u8, page_size * 2 + 50);
     defer allocator.free(slice);
@@ -1035,13 +1281,13 @@ test "realloc large object to small object" {
     try std.testing.expect(slice[16] == 0x34);
 }
 
-test "overrideable mutexes" {
+test "overridable mutexes" {
     var gpa = GeneralPurposeAllocator(.{ .MutexType = std.Thread.Mutex }){
         .backing_allocator = std.testing.allocator,
         .mutex = std.Thread.Mutex{},
     };
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     const ptr = try allocator.create(i32);
     defer allocator.destroy(ptr);
@@ -1049,8 +1295,8 @@ test "overrideable mutexes" {
 
 test "non-page-allocator backing allocator" {
     var gpa = GeneralPurposeAllocator(.{}){ .backing_allocator = std.testing.allocator };
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     const ptr = try allocator.create(i32);
     defer allocator.destroy(ptr);
@@ -1058,11 +1304,12 @@ test "non-page-allocator backing allocator" {
 
 test "realloc large object to larger alignment" {
     var gpa = GeneralPurposeAllocator(test_config){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     var debug_buffer: [1000]u8 = undefined;
-    const debug_allocator = &std.heap.FixedBufferAllocator.init(&debug_buffer).allocator;
+    var fba = std.heap.FixedBufferAllocator.init(&debug_buffer);
+    const debug_allocator = fba.allocator();
 
     var slice = try allocator.alignedAlloc(u8, 16, page_size * 2 + 50);
     defer allocator.free(slice);
@@ -1073,7 +1320,7 @@ test "realloc large object to larger alignment" {
     };
     // This loop allocates until we find a page that is not aligned to the big alignment.
     var stuff_to_free = std.ArrayList([]align(16) u8).init(debug_allocator);
-    while (mem.isAligned(@ptrToInt(slice.ptr), big_alignment)) {
+    while (mem.isAligned(@intFromPtr(slice.ptr), big_alignment)) {
         try stuff_to_free.append(slice);
         slice = try allocator.alignedAlloc(u8, 16, page_size * 2 + 50);
     }
@@ -1083,24 +1330,24 @@ test "realloc large object to larger alignment" {
     slice[0] = 0x12;
     slice[16] = 0x34;
 
-    slice = try allocator.reallocAdvanced(slice, 32, page_size * 2 + 100, .exact);
+    slice = try allocator.reallocAdvanced(slice, 32, page_size * 2 + 100);
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[16] == 0x34);
 
-    slice = try allocator.reallocAdvanced(slice, 32, page_size * 2 + 25, .exact);
+    slice = try allocator.reallocAdvanced(slice, 32, page_size * 2 + 25);
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[16] == 0x34);
 
-    slice = try allocator.reallocAdvanced(slice, big_alignment, page_size * 2 + 100, .exact);
+    slice = try allocator.reallocAdvanced(slice, big_alignment, page_size * 2 + 100);
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[16] == 0x34);
 }
 
 test "large object shrinks to small but allocation fails during shrink" {
-    var failing_allocator = std.testing.FailingAllocator.init(std.heap.page_allocator, 3);
-    var gpa = GeneralPurposeAllocator(.{}){ .backing_allocator = &failing_allocator.allocator };
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    var failing_allocator = std.testing.FailingAllocator.init(std.heap.page_allocator, .{ .fail_index = 3 });
+    var gpa = GeneralPurposeAllocator(.{}){ .backing_allocator = failing_allocator.allocator() };
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     var slice = try allocator.alloc(u8, page_size * 2 + 50);
     defer allocator.free(slice);
@@ -1109,15 +1356,16 @@ test "large object shrinks to small but allocation fails during shrink" {
 
     // Next allocation will fail in the backing allocator of the GeneralPurposeAllocator
 
-    slice = allocator.shrink(slice, 4);
+    try std.testing.expect(allocator.resize(slice, 4));
+    slice = slice[0..4];
     try std.testing.expect(slice[0] == 0x12);
     try std.testing.expect(slice[3] == 0x34);
 }
 
 test "objects of size 1024 and 2048" {
     var gpa = GeneralPurposeAllocator(test_config){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     const slice = try allocator.alloc(u8, 1025);
     const slice2 = try allocator.alloc(u8, 3000);
@@ -1128,8 +1376,8 @@ test "objects of size 1024 and 2048" {
 
 test "setting a memory cap" {
     var gpa = GeneralPurposeAllocator(.{ .enable_memory_limit = true }){};
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     gpa.setRequestedMemoryLimit(1010);
 
@@ -1155,29 +1403,29 @@ test "setting a memory cap" {
 test "double frees" {
     // use a GPA to back a GPA to check for leaks of the latter's metadata
     var backing_gpa = GeneralPurposeAllocator(.{ .safety = true }){};
-    defer std.testing.expect(!backing_gpa.deinit()) catch @panic("leak");
+    defer std.testing.expect(backing_gpa.deinit() == .ok) catch @panic("leak");
 
     const GPA = GeneralPurposeAllocator(.{ .safety = true, .never_unmap = true, .retain_metadata = true });
-    var gpa = GPA{ .backing_allocator = &backing_gpa.allocator };
-    defer std.testing.expect(!gpa.deinit()) catch @panic("leak");
-    const allocator = &gpa.allocator;
+    var gpa = GPA{ .backing_allocator = backing_gpa.allocator() };
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
 
     // detect a small allocation double free, even though bucket is emptied
     const index: usize = 6;
     const size_class: usize = @as(usize, 1) << 6;
     const small = try allocator.alloc(u8, size_class);
-    try std.testing.expect(GPA.searchBucket(gpa.buckets[index], @ptrToInt(small.ptr)) != null);
+    try std.testing.expect(GPA.searchBucket(&gpa.buckets[index], @intFromPtr(small.ptr), gpa.cur_buckets[index]) != null);
     allocator.free(small);
-    try std.testing.expect(GPA.searchBucket(gpa.buckets[index], @ptrToInt(small.ptr)) == null);
-    try std.testing.expect(GPA.searchBucket(gpa.empty_buckets, @ptrToInt(small.ptr)) != null);
+    try std.testing.expect(GPA.searchBucket(&gpa.buckets[index], @intFromPtr(small.ptr), gpa.cur_buckets[index]) == null);
+    try std.testing.expect(GPA.searchBucket(&gpa.empty_buckets, @intFromPtr(small.ptr), null) != null);
 
     // detect a large allocation double free
     const large = try allocator.alloc(u8, 2 * page_size);
-    try std.testing.expect(gpa.large_allocations.contains(@ptrToInt(large.ptr)));
-    try std.testing.expectEqual(gpa.large_allocations.getEntry(@ptrToInt(large.ptr)).?.value_ptr.bytes, large);
+    try std.testing.expect(gpa.large_allocations.contains(@intFromPtr(large.ptr)));
+    try std.testing.expectEqual(gpa.large_allocations.getEntry(@intFromPtr(large.ptr)).?.value_ptr.bytes, large);
     allocator.free(large);
-    try std.testing.expect(gpa.large_allocations.contains(@ptrToInt(large.ptr)));
-    try std.testing.expect(gpa.large_allocations.getEntry(@ptrToInt(large.ptr)).?.value_ptr.freed);
+    try std.testing.expect(gpa.large_allocations.contains(@intFromPtr(large.ptr)));
+    try std.testing.expect(gpa.large_allocations.getEntry(@intFromPtr(large.ptr)).?.value_ptr.freed);
 
     const normal_small = try allocator.alloc(u8, size_class);
     defer allocator.free(normal_small);
@@ -1186,19 +1434,54 @@ test "double frees" {
 
     // check that flushing retained metadata doesn't disturb live allocations
     gpa.flushRetainedMetadata();
-    try std.testing.expect(gpa.empty_buckets == null);
-    try std.testing.expect(GPA.searchBucket(gpa.buckets[index], @ptrToInt(normal_small.ptr)) != null);
-    try std.testing.expect(gpa.large_allocations.contains(@ptrToInt(normal_large.ptr)));
-    try std.testing.expect(!gpa.large_allocations.contains(@ptrToInt(large.ptr)));
+    try std.testing.expect(gpa.empty_buckets.root == null);
+    try std.testing.expect(GPA.searchBucket(&gpa.buckets[index], @intFromPtr(normal_small.ptr), gpa.cur_buckets[index]) != null);
+    try std.testing.expect(gpa.large_allocations.contains(@intFromPtr(normal_large.ptr)));
+    try std.testing.expect(!gpa.large_allocations.contains(@intFromPtr(large.ptr)));
+}
+
+test "empty bucket size class" {
+    const GPA = GeneralPurposeAllocator(.{ .safety = true, .never_unmap = true, .retain_metadata = true });
+    var gpa = GPA{};
+    defer std.testing.expect(gpa.deinit() == .ok) catch @panic("leak");
+    const allocator = gpa.allocator();
+
+    // allocate and free to create an empty bucket
+    const size_class: usize = @as(usize, 1) << 6;
+    const small = try allocator.alloc(u8, size_class);
+    allocator.free(small);
+
+    // the metadata tracking system relies on alloc_cursor of empty buckets
+    // being set to the slot count so that we can get back the size class.
+    const empty_bucket = GPA.searchBucket(&gpa.empty_buckets, @intFromPtr(small.ptr), null).?;
+    try std.testing.expect(empty_bucket.emptyBucketSizeClass() == size_class);
 }
 
 test "bug 9995 fix, large allocs count requested size not backing size" {
     // with AtLeast, buffer likely to be larger than requested, especially when shrinking
     var gpa = GeneralPurposeAllocator(.{ .enable_memory_limit = true }){};
-    var buf = try gpa.allocator.allocAdvanced(u8, 1, page_size + 1, .at_least);
+    const allocator = gpa.allocator();
+
+    var buf = try allocator.alignedAlloc(u8, 1, page_size + 1);
     try std.testing.expect(gpa.total_requested_bytes == page_size + 1);
-    buf = try gpa.allocator.reallocAtLeast(buf, 1);
+    buf = try allocator.realloc(buf, 1);
     try std.testing.expect(gpa.total_requested_bytes == 1);
-    buf = try gpa.allocator.reallocAtLeast(buf, 2);
+    buf = try allocator.realloc(buf, 2);
     try std.testing.expect(gpa.total_requested_bytes == 2);
+}
+
+test "retain metadata and never unmap" {
+    var gpa = std.heap.GeneralPurposeAllocator(.{
+        .safety = true,
+        .never_unmap = true,
+        .retain_metadata = true,
+    }){};
+    defer std.debug.assert(gpa.deinit() == .ok);
+    const allocator = gpa.allocator();
+
+    const alloc = try allocator.alloc(u8, 8);
+    allocator.free(alloc);
+
+    const alloc2 = try allocator.alloc(u8, 8);
+    allocator.free(alloc2);
 }

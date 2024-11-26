@@ -10,7 +10,7 @@ pub const IdentityElementError = error{IdentityElement};
 /// Encoded input cannot be decoded
 pub const EncodingError = error{InvalidEncoding};
 
-/// The signature does't verify for the given message and public key
+/// The signature doesn't verify for the given message and public key
 pub const SignatureVerificationError = error{SignatureVerificationFailed};
 
 /// Both a public and secret key have been provided, but they are incompatible
@@ -31,5 +31,8 @@ pub const WeakParametersError = error{WeakParameters};
 /// Public key would be insecure to use
 pub const WeakPublicKeyError = error{WeakPublicKey};
 
+/// Point is not in the prime order group
+pub const UnexpectedSubgroupError = error{UnexpectedSubgroup};
+
 /// Any error related to cryptography operations
-pub const Error = AuthenticationError || OutputTooLongError || IdentityElementError || EncodingError || SignatureVerificationError || KeyMismatchError || NonCanonicalError || NotSquareError || PasswordVerificationError || WeakParametersError || WeakPublicKeyError;
+pub const Error = AuthenticationError || OutputTooLongError || IdentityElementError || EncodingError || SignatureVerificationError || KeyMismatchError || NonCanonicalError || NotSquareError || PasswordVerificationError || WeakParametersError || WeakPublicKeyError || UnexpectedSubgroupError;

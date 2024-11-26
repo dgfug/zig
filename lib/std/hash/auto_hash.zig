@@ -1,7 +1,6 @@
 const std = @import("std");
 const assert = std.debug.assert;
 const mem = std.mem;
-const meta = std.meta;
 
 /// Describes how pointer types should be hashed.
 pub const HashStrategy = enum {
@@ -23,26 +22,28 @@ pub const HashStrategy = enum {
 pub fn hashPointer(hasher: anytype, key: anytype, comptime strat: HashStrategy) void {
     const info = @typeInfo(@TypeOf(key));
 
-    switch (info.Pointer.size) {
+    switch (info.pointer.size) {
         .One => switch (strat) {
-            .Shallow => hash(hasher, @ptrToInt(key), .Shallow),
+            .Shallow => hash(hasher, @intFromPtr(key), .Shallow),
             .Deep => hash(hasher, key.*, .Shallow),
             .DeepRecursive => hash(hasher, key.*, .DeepRecursive),
         },
 
-        .Slice => switch (strat) {
-            .Shallow => {
-                hashPointer(hasher, key.ptr, .Shallow);
-                hash(hasher, key.len, .Shallow);
-            },
-            .Deep => hashArray(hasher, key, .Shallow),
-            .DeepRecursive => hashArray(hasher, key, .DeepRecursive),
+        .Slice => {
+            switch (strat) {
+                .Shallow => {
+                    hashPointer(hasher, key.ptr, .Shallow);
+                },
+                .Deep => hashArray(hasher, key, .Shallow),
+                .DeepRecursive => hashArray(hasher, key, .DeepRecursive),
+            }
+            hash(hasher, key.len, .Shallow);
         },
 
         .Many,
         .C,
         => switch (strat) {
-            .Shallow => hash(hasher, @ptrToInt(key), .Shallow),
+            .Shallow => hash(hasher, @intFromPtr(key), .Shallow),
             else => @compileError(
                 \\ unknown-length pointers and C pointers cannot be hashed deeply.
                 \\ Consider providing your own hash function.
@@ -53,17 +54,8 @@ pub fn hashPointer(hasher: anytype, key: anytype, comptime strat: HashStrategy) 
 
 /// Helper function to hash a set of contiguous objects, from an array or slice.
 pub fn hashArray(hasher: anytype, key: anytype, comptime strat: HashStrategy) void {
-    switch (strat) {
-        .Shallow => {
-            for (key) |element| {
-                hash(hasher, element, .Shallow);
-            }
-        },
-        else => {
-            for (key) |element| {
-                hash(hasher, element, strat);
-            }
-        },
+    for (key) |element| {
+        hash(hasher, element, strat);
     }
 }
 
@@ -71,52 +63,63 @@ pub fn hashArray(hasher: anytype, key: anytype, comptime strat: HashStrategy) vo
 /// Strategy is provided to determine if pointers should be followed or not.
 pub fn hash(hasher: anytype, key: anytype, comptime strat: HashStrategy) void {
     const Key = @TypeOf(key);
+    const Hasher = switch (@typeInfo(@TypeOf(hasher))) {
+        .pointer => |ptr| ptr.child,
+        else => @TypeOf(hasher),
+    };
 
-    if (strat == .Shallow and comptime meta.trait.hasUniqueRepresentation(Key)) {
-        @call(.{ .modifier = .always_inline }, hasher.update, .{mem.asBytes(&key)});
+    if (strat == .Shallow and std.meta.hasUniqueRepresentation(Key)) {
+        @call(.always_inline, Hasher.update, .{ hasher, mem.asBytes(&key) });
         return;
     }
 
     switch (@typeInfo(Key)) {
-        .NoReturn,
-        .Opaque,
-        .Undefined,
-        .Void,
-        .Null,
-        .ComptimeFloat,
-        .ComptimeInt,
-        .Type,
-        .EnumLiteral,
-        .Frame,
-        .Float,
+        .noreturn,
+        .@"opaque",
+        .undefined,
+        .null,
+        .comptime_float,
+        .comptime_int,
+        .type,
+        .enum_literal,
+        .frame,
+        .float,
         => @compileError("unable to hash type " ++ @typeName(Key)),
+
+        .void => return,
 
         // Help the optimizer see that hashing an int is easy by inlining!
         // TODO Check if the situation is better after #561 is resolved.
-        .Int => {
-            if (comptime meta.trait.hasUniqueRepresentation(Key)) {
-                @call(.{ .modifier = .always_inline }, hasher.update, .{std.mem.asBytes(&key)});
-            } else {
-                // Take only the part containing the key value, the remaining
-                // bytes are undefined and must not be hashed!
-                const byte_size = comptime std.math.divCeil(comptime_int, @bitSizeOf(Key), 8) catch unreachable;
-                @call(.{ .modifier = .always_inline }, hasher.update, .{std.mem.asBytes(&key)[0..byte_size]});
-            }
+        .int => |int| switch (int.signedness) {
+            .signed => hash(hasher, @as(@Type(.{ .int = .{
+                .bits = int.bits,
+                .signedness = .unsigned,
+            } }), @bitCast(key)), strat),
+            .unsigned => {
+                if (std.meta.hasUniqueRepresentation(Key)) {
+                    @call(.always_inline, Hasher.update, .{ hasher, std.mem.asBytes(&key) });
+                } else {
+                    // Take only the part containing the key value, the remaining
+                    // bytes are undefined and must not be hashed!
+                    const byte_size = comptime std.math.divCeil(comptime_int, @bitSizeOf(Key), 8) catch unreachable;
+                    @call(.always_inline, Hasher.update, .{ hasher, std.mem.asBytes(&key)[0..byte_size] });
+                }
+            },
         },
 
-        .Bool => hash(hasher, @boolToInt(key), strat),
-        .Enum => hash(hasher, @enumToInt(key), strat),
-        .ErrorSet => hash(hasher, @errorToInt(key), strat),
-        .AnyFrame, .BoundFn, .Fn => hash(hasher, @ptrToInt(key), strat),
+        .bool => hash(hasher, @intFromBool(key), strat),
+        .@"enum" => hash(hasher, @intFromEnum(key), strat),
+        .error_set => hash(hasher, @intFromError(key), strat),
+        .@"anyframe", .@"fn" => hash(hasher, @intFromPtr(key), strat),
 
-        .Pointer => @call(.{ .modifier = .always_inline }, hashPointer, .{ hasher, key, strat }),
+        .pointer => @call(.always_inline, hashPointer, .{ hasher, key, strat }),
 
-        .Optional => if (key) |k| hash(hasher, k, strat),
+        .optional => if (key) |k| hash(hasher, k, strat),
 
-        .Array => hashArray(hasher, key, strat),
+        .array => hashArray(hasher, key, strat),
 
-        .Vector => |info| {
-            if (comptime meta.trait.hasUniqueRepresentation(Key)) {
+        .vector => |info| {
+            if (std.meta.hasUniqueRepresentation(Key)) {
                 hasher.update(mem.asBytes(&key));
             } else {
                 comptime var i = 0;
@@ -126,7 +129,7 @@ pub fn hash(hasher: anytype, key: anytype, comptime strat: HashStrategy) void {
             }
         },
 
-        .Struct => |info| {
+        .@"struct" => |info| {
             inline for (info.fields) |field| {
                 // We reuse the hash of the previous field as the seed for the
                 // next one so that they're dependant.
@@ -134,13 +137,13 @@ pub fn hash(hasher: anytype, key: anytype, comptime strat: HashStrategy) void {
             }
         },
 
-        .Union => |info| {
+        .@"union" => |info| {
             if (info.tag_type) |tag_type| {
-                const tag = meta.activeTag(key);
+                const tag = std.meta.activeTag(key);
                 hash(hasher, tag, strat);
                 inline for (info.fields) |field| {
                     if (@field(tag_type, field.name) == tag) {
-                        if (field.field_type != void) {
+                        if (field.type != void) {
                             hash(hasher, @field(key, field.name), strat);
                         }
                         // TODO use a labelled break when it does not crash the compiler. cf #2908
@@ -152,7 +155,7 @@ pub fn hash(hasher: anytype, key: anytype, comptime strat: HashStrategy) void {
             } else @compileError("cannot hash untagged union type: " ++ @typeName(Key) ++ ", provide your own hash function");
         },
 
-        .ErrorUnion => blk: {
+        .error_union => blk: {
             const payload = key catch |err| {
                 hash(hasher, err, strat);
                 break :blk;
@@ -162,27 +165,21 @@ pub fn hash(hasher: anytype, key: anytype, comptime strat: HashStrategy) void {
     }
 }
 
-fn typeContainsSlice(comptime K: type) bool {
-    comptime {
-        if (meta.trait.isSlice(K)) {
-            return true;
-        }
-        if (meta.trait.is(.Struct)(K)) {
-            inline for (@typeInfo(K).Struct.fields) |field| {
-                if (typeContainsSlice(field.field_type)) {
+inline fn typeContainsSlice(comptime K: type) bool {
+    return switch (@typeInfo(K)) {
+        .pointer => |info| info.size == .Slice,
+
+        inline .@"struct", .@"union" => |info| {
+            inline for (info.fields) |field| {
+                if (typeContainsSlice(field.type)) {
                     return true;
                 }
             }
-        }
-        if (meta.trait.is(.Union)(K)) {
-            inline for (@typeInfo(K).Union.fields) |field| {
-                if (typeContainsSlice(field.field_type)) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    }
+            return false;
+        },
+
+        else => false,
+    };
 }
 
 /// Provides generic hashing for any eligible type.
@@ -192,8 +189,8 @@ fn typeContainsSlice(comptime K: type) bool {
 pub fn autoHash(hasher: anytype, key: anytype) void {
     const Key = @TypeOf(key);
     if (comptime typeContainsSlice(Key)) {
-        @compileError("std.auto_hash.autoHash does not allow slices as well as unions and structs containing slices here (" ++ @typeName(Key) ++
-            ") because the intent is unclear. Consider using std.auto_hash.hash or providing your own hash function instead.");
+        @compileError("std.hash.autoHash does not allow slices as well as unions and structs containing slices here (" ++ @typeName(Key) ++
+            ") because the intent is unclear. Consider using std.hash.autoHashStrat or providing your own hash function instead.");
     }
 
     hash(hasher, key, .Shallow);
@@ -232,7 +229,7 @@ fn testHashDeepRecursive(key: anytype) u64 {
 
 test "typeContainsSlice" {
     comptime {
-        try testing.expect(!typeContainsSlice(meta.Tag(std.builtin.TypeInfo)));
+        try testing.expect(!typeContainsSlice(std.meta.Tag(std.builtin.Type)));
 
         try testing.expect(typeContainsSlice([]const u8));
         try testing.expect(!typeContainsSlice(u8));
@@ -276,6 +273,7 @@ test "hash slice shallow" {
     const array2 = [_]u32{ 1, 2, 3, 4, 5, 6 };
     // TODO audit deep/shallow - maybe it has the wrong behavior with respect to array pointers and slices
     var runtime_zero: usize = 0;
+    _ = &runtime_zero;
     const a = array1[runtime_zero..];
     const b = array2[runtime_zero..];
     const c = array1[runtime_zero..3];
@@ -309,7 +307,7 @@ test "hash struct deep" {
 
         const Self = @This();
 
-        pub fn init(allocator: *mem.Allocator, a_: u32, b_: u16, c_: bool) !Self {
+        pub fn init(allocator: mem.Allocator, a_: u32, b_: u16, c_: bool) !Self {
             const ptr = try allocator.create(bool);
             ptr.* = c_;
             return Self{ .a = a_, .b = b_, .c = ptr };
@@ -345,7 +343,7 @@ test "testHash optional" {
     const b: ?u32 = null;
     try testing.expectEqual(testHash(a), testHash(@as(u32, 123)));
     try testing.expect(testHash(a) != testHash(b));
-    try testing.expectEqual(testHash(b), 0);
+    try testing.expectEqual(testHash(b), 0x409638ee2bde459); // wyhash empty input hash
 }
 
 test "testHash array" {
@@ -356,6 +354,12 @@ test "testHash array" {
     autoHash(&hasher, @as(u32, 2));
     autoHash(&hasher, @as(u32, 3));
     try testing.expectEqual(h, hasher.final());
+}
+
+test "testHash multi-dimensional array" {
+    const a = [_][]const u32{ &.{ 1, 2, 3 }, &.{ 4, 5 } };
+    const b = [_][]const u32{ &.{ 1, 2 }, &.{ 3, 4, 5 } };
+    try testing.expect(testHash(a) != testHash(b));
 }
 
 test "testHash struct" {
@@ -398,13 +402,13 @@ test "testHash union" {
 }
 
 test "testHash vector" {
-    const a: meta.Vector(4, u32) = [_]u32{ 1, 2, 3, 4 };
-    const b: meta.Vector(4, u32) = [_]u32{ 1, 2, 3, 5 };
+    const a: @Vector(4, u32) = [_]u32{ 1, 2, 3, 4 };
+    const b: @Vector(4, u32) = [_]u32{ 1, 2, 3, 5 };
     try testing.expect(testHash(a) == testHash(a));
     try testing.expect(testHash(a) != testHash(b));
 
-    const c: meta.Vector(4, u31) = [_]u31{ 1, 2, 3, 4 };
-    const d: meta.Vector(4, u31) = [_]u31{ 1, 2, 3, 5 };
+    const c: @Vector(4, u31) = [_]u31{ 1, 2, 3, 4 };
+    const d: @Vector(4, u31) = [_]u31{ 1, 2, 3, 5 };
     try testing.expect(testHash(c) == testHash(c));
     try testing.expect(testHash(c) != testHash(d));
 }

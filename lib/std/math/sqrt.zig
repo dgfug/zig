@@ -11,12 +11,12 @@ const maxInt = std.math.maxInt;
 ///  - sqrt(+-0)   = +-0
 ///  - sqrt(x)     = nan if x < 0
 ///  - sqrt(nan)   = nan
-/// TODO Decide if all this logic should be implemented directly in the @sqrt bultin function.
+/// TODO Decide if all this logic should be implemented directly in the @sqrt builtin function.
 pub fn sqrt(x: anytype) Sqrt(@TypeOf(x)) {
     const T = @TypeOf(x);
     switch (@typeInfo(T)) {
-        .Float, .ComptimeFloat => return @sqrt(x),
-        .ComptimeInt => comptime {
+        .float, .comptime_float => return @sqrt(x),
+        .comptime_int => comptime {
             if (x > maxInt(u128)) {
                 @compileError("sqrt not implemented for comptime_int greater than 128 bits");
             }
@@ -25,8 +25,8 @@ pub fn sqrt(x: anytype) Sqrt(@TypeOf(x)) {
             }
             return @as(T, sqrt_int(u128, x));
         },
-        .Int => |IntType| switch (IntType.signedness) {
-            .signed => return @compileError("sqrt not implemented for signed integers"),
+        .int => |IntType| switch (IntType.signedness) {
+            .signed => @compileError("sqrt not implemented for signed integers"),
             .unsigned => return sqrt_int(T, x),
         },
         else => @compileError("sqrt not implemented for " ++ @typeName(T)),
@@ -34,12 +34,15 @@ pub fn sqrt(x: anytype) Sqrt(@TypeOf(x)) {
 }
 
 fn sqrt_int(comptime T: type, value: T) Sqrt(T) {
-    if (@typeInfo(T).Int.bits <= 2) {
+    if (@typeInfo(T).int.bits <= 2) {
         return if (value == 0) 0 else 1; // shortcut for small number of bits to simplify general case
     } else {
+        const bits = @typeInfo(T).int.bits;
+        const max = math.maxInt(T);
+        const minustwo = (@as(T, 2) ^ max) + 1; // unsigned int cannot represent -2
         var op = value;
         var res: T = 0;
-        var one: T = 1 << ((@typeInfo(T).Int.bits - 1) & -2); // highest power of four that fits into T
+        var one: T = 1 << ((bits - 1) & minustwo); // highest power of four that fits into T
 
         // "one" starts at the highest power of four <= than the argument.
         while (one > op) {
@@ -47,18 +50,18 @@ fn sqrt_int(comptime T: type, value: T) Sqrt(T) {
         }
 
         while (one != 0) {
-            var c = op >= res + one;
+            const c = op >= res + one;
             if (c) op -= res + one;
             res >>= 1;
             if (c) res += one;
             one >>= 2;
         }
 
-        return @intCast(Sqrt(T), res);
+        return @as(Sqrt(T), @intCast(res));
     }
 }
 
-test "math.sqrt_int" {
+test sqrt_int {
     try expect(sqrt_int(u32, 3) == 1);
     try expect(sqrt_int(u32, 4) == 2);
     try expect(sqrt_int(u32, 5) == 2);
@@ -77,7 +80,7 @@ test "math.sqrt_int" {
 /// Returns the return type `sqrt` will return given an operand of type `T`.
 pub fn Sqrt(comptime T: type) type {
     return switch (@typeInfo(T)) {
-        .Int => |int| std.meta.Int(.unsigned, (int.bits + 1) / 2),
+        .int => |int| @Type(.{ .int = .{ .signedness = .unsigned, .bits = (int.bits + 1) / 2 } }),
         else => T,
     };
 }

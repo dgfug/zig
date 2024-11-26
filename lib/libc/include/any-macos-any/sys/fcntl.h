@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2013 Apple Inc. All rights reserved.
+ * Copyright (c) 2000-2022 Apple Inc. All rights reserved.
  *
  * @APPLE_OSREFERENCE_LICENSE_HEADER_START@
  *
@@ -134,8 +134,11 @@
 #define O_NOCTTY        0x00020000      /* don't assign controlling terminal */
 
 
-#if !defined(_POSIX_C_SOURCE) || defined(_DARWIN_C_SOURCE)
+#if __DARWIN_C_LEVEL >= 200809L
 #define O_DIRECTORY     0x00100000
+#endif
+
+#if !defined(_POSIX_C_SOURCE) || defined(_DARWIN_C_SOURCE)
 #define O_SYMLINK       0x00200000      /* allow open of a symlink */
 #endif
 
@@ -151,6 +154,12 @@
 #if __DARWIN_C_LEVEL >= __DARWIN_C_FULL
 #define O_NOFOLLOW_ANY  0x20000000      /* no symlinks allowed in path */
 #endif
+
+#if __DARWIN_C_LEVEL >= 200809L
+#define O_EXEC          0x40000000               /* open file for execute only */
+#define O_SEARCH        (O_EXEC | O_DIRECTORY)   /* open directory for search only */
+#endif
+
 
 
 #if __DARWIN_C_LEVEL >= 200809L
@@ -169,13 +178,18 @@
 #if __DARWIN_C_LEVEL >= __DARWIN_C_FULL
 #define AT_REALDEV              0x0200  /* Return real device inodes resides on for fstatat(2) */
 #define AT_FDONLY               0x0400  /* Use only the fd and Ignore the path for fstatat(2) */
+#define AT_SYMLINK_NOFOLLOW_ANY 0x0800  /* Path should not contain any symlinks */
 #endif
 #endif
 
-/* Data Protection Flags */
 #if !defined(_POSIX_C_SOURCE) || defined(_DARWIN_C_SOURCE)
+/* Data Protection Flags */
 #define O_DP_GETRAWENCRYPTED    0x0001
 #define O_DP_GETRAWUNENCRYPTED  0x0002
+#define O_DP_AUTHENTICATE       0x0004
+
+/* Descriptor value for openat_authenticated_np() to skip authentication with another fd */
+#define AUTH_OPEN_NOAUTHFD      -1
 #endif
 
 
@@ -256,7 +270,13 @@
 
 #define F_LOG2PHYS_EXT  65              /* file offset to device offset, extended */
 
-#define F_GETLKPID              66              /* get record locking information, per-process */
+#define F_GETLKPID              66      /* See man fcntl(2) F_GETLK
+	                                 * Similar to F_GETLK but in addition l_pid is treated as an input parameter
+	                                 * which is used as a matching value when searching locks on the file
+	                                 * so that only locks owned by the process with pid l_pid are returned.
+	                                 * However, any flock(2) type lock will also be found with the returned value
+	                                 * of l_pid set to -1 (as with F_GETLK).
+	                                 */
 
 /* See F_DUPFD_CLOEXEC below for 67 */
 
@@ -284,6 +304,14 @@
 
 #define F_BARRIERFSYNC          85      /* fsync + issue barrier to drive */
 
+#if __DARWIN_C_LEVEL >= __DARWIN_C_FULL
+#define F_OFD_SETLK             90      /* Acquire or release open file description lock */
+#define F_OFD_SETLKW            91      /* (as F_OFD_SETLK but blocking if conflicting lock) */
+#define F_OFD_GETLK             92      /* Examine OFD lock */
+
+#define F_OFD_SETLKWTIMEOUT     93      /* (as F_OFD_SETLKW but return if timeout) */
+#endif
+
 
 #define F_ADDFILESIGS_RETURN    97      /* Add signature from same file, return end offset in structure on success */
 #define F_CHECK_LV              98      /* Check if Library Validation allows this Mach-O file to be mapped into the calling process */
@@ -292,13 +320,23 @@
 
 #define F_TRIM_ACTIVE_FILE      100     /* Trim an active file */
 
-#define F_SPECULATIVE_READ     101      /* Synchronous advisory read fcntl for regular and compressed file */
+#define F_SPECULATIVE_READ      101     /* Asynchronous advisory read fcntl for regular and compressed file */
 
-#define F_GETPATH_NOFIRMLINK       102              /* return the full path without firmlinks of the fd */
+#define F_GETPATH_NOFIRMLINK    102     /* return the full path without firmlinks of the fd */
 
 #define F_ADDFILESIGS_INFO      103     /* Add signature from same file, return information */
 #define F_ADDFILESUPPL          104     /* Add supplemental signature from same file with fd reference to original */
 #define F_GETSIGSINFO           105     /* Look up code signature information attached to a file or slice */
+
+#define F_SETLEASE              106      /* Acquire or release lease */
+#define F_GETLEASE              107      /* Retrieve lease information */
+
+#define F_SETLEASE_ARG(t, oc)   ((t) | ((oc) << 2))
+
+
+#define F_TRANSFEREXTENTS       110      /* Transfer allocated extents beyond leof to a different file */
+
+#define F_ATTRIBUTION_TAG       111      /* Based on flags, query/set/delete a file's attribution tag */
 
 // FS-specific fcntl()'s numbers begin at 0x00010000 and go up
 #define FCNTL_FS_SPECIFIC_BASE  0x00010000
@@ -335,6 +373,7 @@
 
 #define F_ALLOCATECONTIG  0x00000002    /* allocate contigious space */
 #define F_ALLOCATEALL     0x00000004    /* allocate all requested space or no space at all */
+#define F_ALLOCATEPERSIST 0x00000008    /* do not free space upon close(2) */
 
 /* Position Modes (fst_posmode) for F_PREALLOCATE */
 
@@ -478,14 +517,19 @@ typedef struct fspecread {
 	off_t fsr_length;        /* IN: size of the region */
 } fspecread_t;
 
-/* fbootstraptransfer_t used by F_READBOOTSTRAP and F_WRITEBOOTSTRAP commands */
 
-typedef struct fbootstraptransfer {
-	off_t fbt_offset;       /* IN: offset to start read/write */
-	size_t fbt_length;    /* IN: number of bytes to transfer */
-	void *fbt_buffer;       /* IN: buffer to be read/written */
-} fbootstraptransfer_t;
+/* fattributiontag_t used by F_ATTRIBUTION_TAG */
+#define ATTRIBUTION_NAME_MAX 255
+typedef struct fattributiontag {
+	unsigned int ft_flags;  /* IN: flags word */
+	unsigned long long ft_hash; /* OUT: hash of attribution tag name */
+	char ft_attribution_name[ATTRIBUTION_NAME_MAX]; /* IN/OUT: attribution tag name associated with the file */
+} fattributiontag_t;
 
+/* ft_flags (F_ATTRIBUTION_TAG)*/
+#define F_CREATE_TAG  0x00000001
+#define F_DELETE_TAG  0x00000002
+#define F_QUERY_TAG   0x00000004
 
 /*
  * For F_LOG2PHYS this information is passed back to user
@@ -565,6 +609,8 @@ int     openx_np(const char *, int, filesec_t);
  *  int open_dprotected_np(user_addr_t path, int flags, int class, int dpflags, int mode)
  */
 int open_dprotected_np( const char *, int, int, int, ...);
+int openat_dprotected_np( int, const char *, int, int, int, ...);
+int openat_authenticated_np(int, const char *, int, int);
 int     flock(int, int);
 filesec_t filesec_init(void);
 filesec_t filesec_dup(filesec_t);

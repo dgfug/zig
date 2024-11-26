@@ -1,8 +1,9 @@
 const std = @import("../../std.zig");
 const maxInt = std.math.maxInt;
 const linux = std.os.linux;
-const iovec = std.os.iovec;
-const iovec_const = std.os.iovec_const;
+const SYS = linux.SYS;
+const iovec = std.posix.iovec;
+const iovec_const = std.posix.iovec_const;
 
 const pid_t = linux.pid_t;
 const uid_t = linux.uid_t;
@@ -17,7 +18,7 @@ const timespec = linux.timespec;
 pub fn syscall0(number: SYS) usize {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> usize),
-        : [number] "{rax}" (@enumToInt(number)),
+        : [number] "{rax}" (@intFromEnum(number)),
         : "rcx", "r11", "memory"
     );
 }
@@ -25,7 +26,7 @@ pub fn syscall0(number: SYS) usize {
 pub fn syscall1(number: SYS, arg1: usize) usize {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> usize),
-        : [number] "{rax}" (@enumToInt(number)),
+        : [number] "{rax}" (@intFromEnum(number)),
           [arg1] "{rdi}" (arg1),
         : "rcx", "r11", "memory"
     );
@@ -34,7 +35,7 @@ pub fn syscall1(number: SYS, arg1: usize) usize {
 pub fn syscall2(number: SYS, arg1: usize, arg2: usize) usize {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> usize),
-        : [number] "{rax}" (@enumToInt(number)),
+        : [number] "{rax}" (@intFromEnum(number)),
           [arg1] "{rdi}" (arg1),
           [arg2] "{rsi}" (arg2),
         : "rcx", "r11", "memory"
@@ -44,7 +45,7 @@ pub fn syscall2(number: SYS, arg1: usize, arg2: usize) usize {
 pub fn syscall3(number: SYS, arg1: usize, arg2: usize, arg3: usize) usize {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> usize),
-        : [number] "{rax}" (@enumToInt(number)),
+        : [number] "{rax}" (@intFromEnum(number)),
           [arg1] "{rdi}" (arg1),
           [arg2] "{rsi}" (arg2),
           [arg3] "{rdx}" (arg3),
@@ -55,7 +56,7 @@ pub fn syscall3(number: SYS, arg1: usize, arg2: usize, arg3: usize) usize {
 pub fn syscall4(number: SYS, arg1: usize, arg2: usize, arg3: usize, arg4: usize) usize {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> usize),
-        : [number] "{rax}" (@enumToInt(number)),
+        : [number] "{rax}" (@intFromEnum(number)),
           [arg1] "{rdi}" (arg1),
           [arg2] "{rsi}" (arg2),
           [arg3] "{rdx}" (arg3),
@@ -67,7 +68,7 @@ pub fn syscall4(number: SYS, arg1: usize, arg2: usize, arg3: usize, arg4: usize)
 pub fn syscall5(number: SYS, arg1: usize, arg2: usize, arg3: usize, arg4: usize, arg5: usize) usize {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> usize),
-        : [number] "{rax}" (@enumToInt(number)),
+        : [number] "{rax}" (@intFromEnum(number)),
           [arg1] "{rdi}" (arg1),
           [arg2] "{rsi}" (arg2),
           [arg3] "{rdx}" (arg3),
@@ -88,7 +89,7 @@ pub fn syscall6(
 ) usize {
     return asm volatile ("syscall"
         : [ret] "={rax}" (-> usize),
-        : [number] "{rax}" (@enumToInt(number)),
+        : [number] "{rax}" (@intFromEnum(number)),
           [arg1] "{rdi}" (arg1),
           [arg2] "{rsi}" (arg2),
           [arg3] "{rdx}" (arg3),
@@ -99,17 +100,51 @@ pub fn syscall6(
     );
 }
 
-/// This matches the libc clone function.
-pub extern fn clone(func: fn (arg: usize) callconv(.C) u8, stack: usize, flags: usize, arg: usize, ptid: *i32, tls: usize, ctid: *i32) usize;
+pub fn clone() callconv(.Naked) usize {
+    asm volatile (
+        \\      movl $56,%%eax // SYS_clone
+        \\      movq %%rdi,%%r11
+        \\      movq %%rdx,%%rdi
+        \\      movq %%r8,%%rdx
+        \\      movq %%r9,%%r8
+        \\      movq 8(%%rsp),%%r10
+        \\      movq %%r11,%%r9
+        \\      andq $-16,%%rsi
+        \\      subq $8,%%rsi
+        \\      movq %%rcx,(%%rsi)
+        \\      syscall
+        \\      testq %%rax,%%rax
+        \\      jz 1f
+        \\      retq
+        \\1:    .cfi_undefined %%rip
+        \\      xorl %%ebp,%%ebp
+        \\      popq %%rdi
+        \\      callq *%%r9
+        \\      movl %%eax,%%edi
+        \\      movl $60,%%eax // SYS_exit
+        \\      syscall
+        \\
+    );
+}
 
 pub const restore = restore_rt;
 
-pub fn restore_rt() callconv(.Naked) void {
-    return asm volatile ("syscall"
-        :
-        : [number] "{rax}" (@enumToInt(SYS.rt_sigreturn)),
-        : "rcx", "r11", "memory"
-    );
+pub fn restore_rt() callconv(.Naked) noreturn {
+    switch (@import("builtin").zig_backend) {
+        .stage2_c => asm volatile (
+            \\ movl %[number], %%eax
+            \\ syscall
+            :
+            : [number] "i" (@intFromEnum(SYS.rt_sigreturn)),
+            : "rcx", "r11", "memory"
+        ),
+        else => asm volatile (
+            \\ syscall
+            :
+            : [number] "{rax}" (@intFromEnum(SYS.rt_sigreturn)),
+            : "rcx", "r11", "memory"
+        ),
+    }
 }
 
 pub const mode_t = usize;
@@ -117,392 +152,6 @@ pub const time_t = isize;
 pub const nlink_t = usize;
 pub const blksize_t = isize;
 pub const blkcnt_t = isize;
-
-pub const SYS = enum(usize) {
-    read = 0,
-    write = 1,
-    open = 2,
-    close = 3,
-    stat = 4,
-    fstat = 5,
-    lstat = 6,
-    poll = 7,
-    lseek = 8,
-    mmap = 9,
-    mprotect = 10,
-    munmap = 11,
-    brk = 12,
-    rt_sigaction = 13,
-    rt_sigprocmask = 14,
-    rt_sigreturn = 15,
-    ioctl = 16,
-    pread = 17,
-    pwrite = 18,
-    readv = 19,
-    writev = 20,
-    access = 21,
-    pipe = 22,
-    select = 23,
-    sched_yield = 24,
-    mremap = 25,
-    msync = 26,
-    mincore = 27,
-    madvise = 28,
-    shmget = 29,
-    shmat = 30,
-    shmctl = 31,
-    dup = 32,
-    dup2 = 33,
-    pause = 34,
-    nanosleep = 35,
-    getitimer = 36,
-    alarm = 37,
-    setitimer = 38,
-    getpid = 39,
-    sendfile = 40,
-    socket = 41,
-    connect = 42,
-    accept = 43,
-    sendto = 44,
-    recvfrom = 45,
-    sendmsg = 46,
-    recvmsg = 47,
-    shutdown = 48,
-    bind = 49,
-    listen = 50,
-    getsockname = 51,
-    getpeername = 52,
-    socketpair = 53,
-    setsockopt = 54,
-    getsockopt = 55,
-    clone = 56,
-    fork = 57,
-    vfork = 58,
-    execve = 59,
-    exit = 60,
-    wait4 = 61,
-    kill = 62,
-    uname = 63,
-    semget = 64,
-    semop = 65,
-    semctl = 66,
-    shmdt = 67,
-    msgget = 68,
-    msgsnd = 69,
-    msgrcv = 70,
-    msgctl = 71,
-    fcntl = 72,
-    flock = 73,
-    fsync = 74,
-    fdatasync = 75,
-    truncate = 76,
-    ftruncate = 77,
-    getdents = 78,
-    getcwd = 79,
-    chdir = 80,
-    fchdir = 81,
-    rename = 82,
-    mkdir = 83,
-    rmdir = 84,
-    creat = 85,
-    link = 86,
-    unlink = 87,
-    symlink = 88,
-    readlink = 89,
-    chmod = 90,
-    fchmod = 91,
-    chown = 92,
-    fchown = 93,
-    lchown = 94,
-    umask = 95,
-    gettimeofday = 96,
-    getrlimit = 97,
-    getrusage = 98,
-    sysinfo = 99,
-    times = 100,
-    ptrace = 101,
-    getuid = 102,
-    syslog = 103,
-    getgid = 104,
-    setuid = 105,
-    setgid = 106,
-    geteuid = 107,
-    getegid = 108,
-    setpgid = 109,
-    getppid = 110,
-    getpgrp = 111,
-    setsid = 112,
-    setreuid = 113,
-    setregid = 114,
-    getgroups = 115,
-    setgroups = 116,
-    setresuid = 117,
-    getresuid = 118,
-    setresgid = 119,
-    getresgid = 120,
-    getpgid = 121,
-    setfsuid = 122,
-    setfsgid = 123,
-    getsid = 124,
-    capget = 125,
-    capset = 126,
-    rt_sigpending = 127,
-    rt_sigtimedwait = 128,
-    rt_sigqueueinfo = 129,
-    rt_sigsuspend = 130,
-    sigaltstack = 131,
-    utime = 132,
-    mknod = 133,
-    uselib = 134,
-    personality = 135,
-    ustat = 136,
-    statfs = 137,
-    fstatfs = 138,
-    sysfs = 139,
-    getpriority = 140,
-    setpriority = 141,
-    sched_setparam = 142,
-    sched_getparam = 143,
-    sched_setscheduler = 144,
-    sched_getscheduler = 145,
-    sched_get_priority_max = 146,
-    sched_get_priority_min = 147,
-    sched_rr_get_interval = 148,
-    mlock = 149,
-    munlock = 150,
-    mlockall = 151,
-    munlockall = 152,
-    vhangup = 153,
-    modify_ldt = 154,
-    pivot_root = 155,
-    _sysctl = 156,
-    prctl = 157,
-    arch_prctl = 158,
-    adjtimex = 159,
-    setrlimit = 160,
-    chroot = 161,
-    sync = 162,
-    acct = 163,
-    settimeofday = 164,
-    mount = 165,
-    umount2 = 166,
-    swapon = 167,
-    swapoff = 168,
-    reboot = 169,
-    sethostname = 170,
-    setdomainname = 171,
-    iopl = 172,
-    ioperm = 173,
-    create_module = 174,
-    init_module = 175,
-    delete_module = 176,
-    get_kernel_syms = 177,
-    query_module = 178,
-    quotactl = 179,
-    nfsservctl = 180,
-    getpmsg = 181,
-    putpmsg = 182,
-    afs_syscall = 183,
-    tuxcall = 184,
-    security = 185,
-    gettid = 186,
-    readahead = 187,
-    setxattr = 188,
-    lsetxattr = 189,
-    fsetxattr = 190,
-    getxattr = 191,
-    lgetxattr = 192,
-    fgetxattr = 193,
-    listxattr = 194,
-    llistxattr = 195,
-    flistxattr = 196,
-    removexattr = 197,
-    lremovexattr = 198,
-    fremovexattr = 199,
-    tkill = 200,
-    time = 201,
-    futex = 202,
-    sched_setaffinity = 203,
-    sched_getaffinity = 204,
-    set_thread_area = 205,
-    io_setup = 206,
-    io_destroy = 207,
-    io_getevents = 208,
-    io_submit = 209,
-    io_cancel = 210,
-    get_thread_area = 211,
-    lookup_dcookie = 212,
-    epoll_create = 213,
-    epoll_ctl_old = 214,
-    epoll_wait_old = 215,
-    remap_file_pages = 216,
-    getdents64 = 217,
-    set_tid_address = 218,
-    restart_syscall = 219,
-    semtimedop = 220,
-    fadvise64 = 221,
-    timer_create = 222,
-    timer_settime = 223,
-    timer_gettime = 224,
-    timer_getoverrun = 225,
-    timer_delete = 226,
-    clock_settime = 227,
-    clock_gettime = 228,
-    clock_getres = 229,
-    clock_nanosleep = 230,
-    exit_group = 231,
-    epoll_wait = 232,
-    epoll_ctl = 233,
-    tgkill = 234,
-    utimes = 235,
-    vserver = 236,
-    mbind = 237,
-    set_mempolicy = 238,
-    get_mempolicy = 239,
-    mq_open = 240,
-    mq_unlink = 241,
-    mq_timedsend = 242,
-    mq_timedreceive = 243,
-    mq_notify = 244,
-    mq_getsetattr = 245,
-    kexec_load = 246,
-    waitid = 247,
-    add_key = 248,
-    request_key = 249,
-    keyctl = 250,
-    ioprio_set = 251,
-    ioprio_get = 252,
-    inotify_init = 253,
-    inotify_add_watch = 254,
-    inotify_rm_watch = 255,
-    migrate_pages = 256,
-    openat = 257,
-    mkdirat = 258,
-    mknodat = 259,
-    fchownat = 260,
-    futimesat = 261,
-    fstatat = 262,
-    unlinkat = 263,
-    renameat = 264,
-    linkat = 265,
-    symlinkat = 266,
-    readlinkat = 267,
-    fchmodat = 268,
-    faccessat = 269,
-    pselect6 = 270,
-    ppoll = 271,
-    unshare = 272,
-    set_robust_list = 273,
-    get_robust_list = 274,
-    splice = 275,
-    tee = 276,
-    sync_file_range = 277,
-    vmsplice = 278,
-    move_pages = 279,
-    utimensat = 280,
-    epoll_pwait = 281,
-    signalfd = 282,
-    timerfd_create = 283,
-    eventfd = 284,
-    fallocate = 285,
-    timerfd_settime = 286,
-    timerfd_gettime = 287,
-    accept4 = 288,
-    signalfd4 = 289,
-    eventfd2 = 290,
-    epoll_create1 = 291,
-    dup3 = 292,
-    pipe2 = 293,
-    inotify_init1 = 294,
-    preadv = 295,
-    pwritev = 296,
-    rt_tgsigqueueinfo = 297,
-    perf_event_open = 298,
-    recvmmsg = 299,
-    fanotify_init = 300,
-    fanotify_mark = 301,
-    prlimit64 = 302,
-    name_to_handle_at = 303,
-    open_by_handle_at = 304,
-    clock_adjtime = 305,
-    syncfs = 306,
-    sendmmsg = 307,
-    setns = 308,
-    getcpu = 309,
-    process_vm_readv = 310,
-    process_vm_writev = 311,
-    kcmp = 312,
-    finit_module = 313,
-    sched_setattr = 314,
-    sched_getattr = 315,
-    renameat2 = 316,
-    seccomp = 317,
-    getrandom = 318,
-    memfd_create = 319,
-    kexec_file_load = 320,
-    bpf = 321,
-    execveat = 322,
-    userfaultfd = 323,
-    membarrier = 324,
-    mlock2 = 325,
-    copy_file_range = 326,
-    preadv2 = 327,
-    pwritev2 = 328,
-    pkey_mprotect = 329,
-    pkey_alloc = 330,
-    pkey_free = 331,
-    statx = 332,
-    io_pgetevents = 333,
-    rseq = 334,
-    pidfd_send_signal = 424,
-    io_uring_setup = 425,
-    io_uring_enter = 426,
-    io_uring_register = 427,
-    open_tree = 428,
-    move_mount = 429,
-    fsopen = 430,
-    fsconfig = 431,
-    fsmount = 432,
-    fspick = 433,
-    pidfd_open = 434,
-    clone3 = 435,
-    close_range = 436,
-    openat2 = 437,
-    pidfd_getfd = 438,
-    faccessat2 = 439,
-    process_madvise = 440,
-    epoll_pwait2 = 441,
-    mount_setattr = 442,
-    landlock_create_ruleset = 444,
-    landlock_add_rule = 445,
-    landlock_restrict_self = 446,
-    memfd_secret = 447,
-
-    _,
-};
-
-pub const O = struct {
-    pub const CREAT = 0o100;
-    pub const EXCL = 0o200;
-    pub const NOCTTY = 0o400;
-    pub const TRUNC = 0o1000;
-    pub const APPEND = 0o2000;
-    pub const NONBLOCK = 0o4000;
-    pub const DSYNC = 0o10000;
-    pub const SYNC = 0o4010000;
-    pub const RSYNC = 0o4010000;
-    pub const DIRECTORY = 0o200000;
-    pub const NOFOLLOW = 0o400000;
-    pub const CLOEXEC = 0o2000000;
-
-    pub const ASYNC = 0o20000;
-    pub const DIRECT = 0o40000;
-    pub const LARGEFILE = 0;
-    pub const NOATIME = 0o1000000;
-    pub const PATH = 0o10000000;
-    pub const TMPFILE = 0o20200000;
-    pub const NDELAY = NONBLOCK;
-};
 
 pub const F = struct {
     pub const DUPFD = 0;
@@ -525,21 +174,6 @@ pub const F = struct {
     pub const RDLCK = 0;
     pub const WRLCK = 1;
     pub const UNLCK = 2;
-};
-
-pub const MAP = struct {
-    /// only give out 32bit addresses
-    pub const @"32BIT" = 0x40;
-    /// stack-like segment
-    pub const GROWSDOWN = 0x0100;
-    /// ETXTBSY
-    pub const DENYWRITE = 0x0800;
-    /// mark it as an executable
-    pub const EXECUTABLE = 0x1000;
-    /// pages are locked
-    pub const LOCKED = 0x2000;
-    /// don't check for reservations
-    pub const NORESERVE = 0x4000;
 };
 
 pub const VDSO = struct {
@@ -583,13 +217,6 @@ pub const REG = struct {
     pub const CR2 = 22;
 };
 
-pub const LOCK = struct {
-    pub const SH = 1;
-    pub const EX = 2;
-    pub const NB = 4;
-    pub const UN = 8;
-};
-
 pub const Flock = extern struct {
     type: i16,
     whence: i16,
@@ -604,7 +231,7 @@ pub const msghdr = extern struct {
     iov: [*]iovec,
     iovlen: i32,
     __pad1: i32 = 0,
-    control: ?*c_void,
+    control: ?*anyopaque,
     controllen: socklen_t,
     __pad2: socklen_t = 0,
     flags: i32,
@@ -613,10 +240,10 @@ pub const msghdr = extern struct {
 pub const msghdr_const = extern struct {
     name: ?*const sockaddr,
     namelen: socklen_t,
-    iov: [*]iovec_const,
+    iov: [*]const iovec_const,
     iovlen: i32,
     __pad1: i32 = 0,
-    control: ?*c_void,
+    control: ?*const anyopaque,
     controllen: socklen_t,
     __pad2: socklen_t = 0,
     flags: i32,
@@ -660,13 +287,13 @@ pub const Stat = extern struct {
 };
 
 pub const timeval = extern struct {
-    tv_sec: isize,
-    tv_usec: isize,
+    sec: isize,
+    usec: isize,
 };
 
 pub const timezone = extern struct {
-    tz_minuteswest: i32,
-    tz_dsttime: i32,
+    minuteswest: i32,
+    dsttime: i32,
 };
 
 pub const Elf_Symndx = u32;
@@ -736,9 +363,106 @@ pub const mcontext_t = extern struct {
 
 pub const ucontext_t = extern struct {
     flags: usize,
-    link: *ucontext_t,
+    link: ?*ucontext_t,
     stack: stack_t,
     mcontext: mcontext_t,
     sigmask: sigset_t,
     fpregs_mem: [64]usize,
 };
+
+fn gpRegisterOffset(comptime reg_index: comptime_int) usize {
+    return @offsetOf(ucontext_t, "mcontext") + @offsetOf(mcontext_t, "gregs") + @sizeOf(usize) * reg_index;
+}
+
+fn getContextInternal() callconv(.Naked) usize {
+    // TODO: Read GS/FS registers?
+    asm volatile (
+        \\ movq $0, %[flags_offset:c](%%rdi)
+        \\ movq $0, %[link_offset:c](%%rdi)
+        \\ movq %%r8, %[r8_offset:c](%%rdi)
+        \\ movq %%r9, %[r9_offset:c](%%rdi)
+        \\ movq %%r10, %[r10_offset:c](%%rdi)
+        \\ movq %%r11, %[r11_offset:c](%%rdi)
+        \\ movq %%r12, %[r12_offset:c](%%rdi)
+        \\ movq %%r13, %[r13_offset:c](%%rdi)
+        \\ movq %%r14, %[r14_offset:c](%%rdi)
+        \\ movq %%r15, %[r15_offset:c](%%rdi)
+        \\ movq %%rdi, %[rdi_offset:c](%%rdi)
+        \\ movq %%rsi, %[rsi_offset:c](%%rdi)
+        \\ movq %%rbp, %[rbp_offset:c](%%rdi)
+        \\ movq %%rbx, %[rbx_offset:c](%%rdi)
+        \\ movq %%rdx, %[rdx_offset:c](%%rdi)
+        \\ movq %%rax, %[rax_offset:c](%%rdi)
+        \\ movq %%rcx, %[rcx_offset:c](%%rdi)
+        \\ movq (%%rsp), %%rcx
+        \\ movq %%rcx, %[rip_offset:c](%%rdi)
+        \\ leaq 8(%%rsp), %%rcx
+        \\ movq %%rcx, %[rsp_offset:c](%%rdi)
+        \\ pushfq
+        \\ popq %[efl_offset:c](%%rdi)
+        \\ leaq %[fpmem_offset:c](%%rdi), %%rcx
+        \\ movq %%rcx, %[fpstate_offset:c](%%rdi)
+        \\ fnstenv (%%rcx)
+        \\ fldenv (%%rcx)
+        \\ stmxcsr %[mxcsr_offset:c](%%rdi)
+        \\ leaq %[stack_offset:c](%%rdi), %%rsi
+        \\ movq %%rdi, %%r8
+        \\ xorl %%edi, %%edi
+        \\ movl %[sigaltstack], %%eax
+        \\ syscall
+        \\ testq %%rax, %%rax
+        \\ jnz 0f
+        \\ movl %[sigprocmask], %%eax
+        \\ xorl %%esi, %%esi
+        \\ leaq %[sigmask_offset:c](%%r8), %%rdx
+        \\ movl %[sigset_size], %%r10d
+        \\ syscall
+        \\0:
+        \\ retq
+        :
+        : [flags_offset] "i" (@offsetOf(ucontext_t, "flags")),
+          [link_offset] "i" (@offsetOf(ucontext_t, "link")),
+          [r8_offset] "i" (comptime gpRegisterOffset(REG.R8)),
+          [r9_offset] "i" (comptime gpRegisterOffset(REG.R9)),
+          [r10_offset] "i" (comptime gpRegisterOffset(REG.R10)),
+          [r11_offset] "i" (comptime gpRegisterOffset(REG.R11)),
+          [r12_offset] "i" (comptime gpRegisterOffset(REG.R12)),
+          [r13_offset] "i" (comptime gpRegisterOffset(REG.R13)),
+          [r14_offset] "i" (comptime gpRegisterOffset(REG.R14)),
+          [r15_offset] "i" (comptime gpRegisterOffset(REG.R15)),
+          [rdi_offset] "i" (comptime gpRegisterOffset(REG.RDI)),
+          [rsi_offset] "i" (comptime gpRegisterOffset(REG.RSI)),
+          [rbp_offset] "i" (comptime gpRegisterOffset(REG.RBP)),
+          [rbx_offset] "i" (comptime gpRegisterOffset(REG.RBX)),
+          [rdx_offset] "i" (comptime gpRegisterOffset(REG.RDX)),
+          [rax_offset] "i" (comptime gpRegisterOffset(REG.RAX)),
+          [rcx_offset] "i" (comptime gpRegisterOffset(REG.RCX)),
+          [rsp_offset] "i" (comptime gpRegisterOffset(REG.RSP)),
+          [rip_offset] "i" (comptime gpRegisterOffset(REG.RIP)),
+          [efl_offset] "i" (comptime gpRegisterOffset(REG.EFL)),
+          [fpstate_offset] "i" (@offsetOf(ucontext_t, "mcontext") + @offsetOf(mcontext_t, "fpregs")),
+          [fpmem_offset] "i" (@offsetOf(ucontext_t, "fpregs_mem")),
+          [mxcsr_offset] "i" (@offsetOf(ucontext_t, "fpregs_mem") + @offsetOf(fpstate, "mxcsr")),
+          [sigaltstack] "i" (@intFromEnum(linux.SYS.sigaltstack)),
+          [stack_offset] "i" (@offsetOf(ucontext_t, "stack")),
+          [sigprocmask] "i" (@intFromEnum(linux.SYS.rt_sigprocmask)),
+          [sigmask_offset] "i" (@offsetOf(ucontext_t, "sigmask")),
+          [sigset_size] "i" (linux.NSIG / 8),
+        : "cc", "memory", "rax", "rcx", "rdx", "rdi", "rsi", "r8", "r10", "r11"
+    );
+}
+
+pub inline fn getcontext(context: *ucontext_t) usize {
+    // This method is used so that getContextInternal can control
+    // its prologue in order to read RSP from a constant offset
+    // An aligned stack is not needed for getContextInternal.
+    var clobber_rdi: usize = undefined;
+    return asm volatile (
+        \\ callq %[getContextInternal:P]
+        : [_] "={rax}" (-> usize),
+          [_] "={rdi}" (clobber_rdi),
+        : [_] "{rdi}" (context),
+          [getContextInternal] "X" (&getContextInternal),
+        : "cc", "memory", "rcx", "rdx", "rsi", "r8", "r10", "r11"
+    );
+}

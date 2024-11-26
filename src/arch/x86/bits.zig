@@ -1,20 +1,19 @@
 const std = @import("std");
-const DW = std.dwarf;
 
 // zig fmt: off
 pub const Register = enum(u8) {
     // 0 through 7, 32-bit registers. id is int value
-    eax, ecx, edx, ebx, esp, ebp, esi, edi, 
+    eax, ecx, edx, ebx, esp, ebp, esi, edi,
 
     // 8-15, 16-bit registers. id is int value - 8.
     ax, cx, dx, bx, sp, bp, si, di,
-    
+
     // 16-23, 8-bit registers. id is int value - 16.
     al, cl, dl, bl, ah, ch, dh, bh,
 
     /// Returns the bit-width of the register.
-    pub fn size(self: @This()) u7 {
-        return switch (@enumToInt(self)) {
+    pub fn size(self: Register) u7 {
+        return switch (@intFromEnum(self)) {
             0...7 => 32,
             8...15 => 16,
             16...23 => 8,
@@ -25,58 +24,36 @@ pub const Register = enum(u8) {
     /// Returns the register's id. This is used in practically every opcode the
     /// x86 has. It is embedded in some instructions, such as the `B8 +rd` move
     /// instruction, and is used in the R/M byte.
-    pub fn id(self: @This()) u3 {
-        return @truncate(u3, @enumToInt(self));
-    }
-
-    /// Returns the index into `callee_preserved_regs`.
-    pub fn allocIndex(self: Register) ?u4 {
-        return switch (self) {
-            .eax, .ax, .al => 0,
-            .ecx, .cx, .cl => 1,
-            .edx, .dx, .dl => 2,
-            .esi, .si  => 3,
-            .edi, .di => 4,
-            else => null,
-        };
+    pub fn id(self: Register) u3 {
+        return @truncate(@intFromEnum(self));
     }
 
     /// Convert from any register to its 32 bit alias.
     pub fn to32(self: Register) Register {
-        return @intToEnum(Register, @as(u8, self.id()));
+        return @enumFromInt(@as(u8, self.id()));
     }
 
     /// Convert from any register to its 16 bit alias.
     pub fn to16(self: Register) Register {
-        return @intToEnum(Register, @as(u8, self.id()) + 8);
+        return @enumFromInt(@as(u8, self.id()) + 8);
     }
 
     /// Convert from any register to its 8 bit alias.
     pub fn to8(self: Register) Register {
-        return @intToEnum(Register, @as(u8, self.id()) + 16);
+        return @enumFromInt(@as(u8, self.id()) + 16);
     }
 
-
-    pub fn dwarfLocOp(reg: Register) u8 {
-        return switch (reg.to32()) {
-            .eax => DW.OP.reg0,
-            .ecx => DW.OP.reg1,
-            .edx => DW.OP.reg2,
-            .ebx => DW.OP.reg3,
-            .esp => DW.OP.reg4,
-            .ebp => DW.OP.reg5,
-            .esi => DW.OP.reg6,
-            .edi => DW.OP.reg7,
-            else => unreachable,
-        };
+    pub fn dwarfNum(reg: Register) u8 {
+        return @intFromEnum(reg.to32());
     }
 };
 
 // zig fmt: on
 
+/// TODO this set is actually a set of caller-saved registers.
 pub const callee_preserved_regs = [_]Register{ .eax, .ecx, .edx, .esi, .edi };
 
-// TODO add these to Register enum and corresponding dwarfLocOp
+// TODO add these to Register enum and corresponding dwarfNum
 //  // Return Address register. This is stored in `0(%esp, "")` and is not a physical register.
 //  RA = (8, "RA"),
 //

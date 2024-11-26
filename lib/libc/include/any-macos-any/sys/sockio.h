@@ -1,5 +1,5 @@
 /*
- * Copyright (c) 2000-2019 Apple Inc. All rights reserved.
+ * Copyright (c) 2000-2021 Apple Inc. All rights reserved.
  *
  * @APPLE_OSREFERENCE_LICENSE_HEADER_START@
  *
@@ -143,6 +143,8 @@
 
 #define SIOCSIFCAP       _IOW('i', 90, struct ifreq)    /* set IF features */
 #define SIOCGIFCAP      _IOWR('i', 91, struct ifreq)    /* get IF features */
+
+#define SIOCSIFMANAGEMENT       _IOWR('i', 92, struct ifreq)   /* set management interface */
 
 #define SIOCIFCREATE    _IOWR('i', 120, struct ifreq)   /* create clone if */
 #define SIOCIFDESTROY    _IOW('i', 121, struct ifreq)   /* destroy clone if */

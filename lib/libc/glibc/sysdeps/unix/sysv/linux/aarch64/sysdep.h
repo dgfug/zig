@@ -1,4 +1,4 @@
-/* Copyright (C) 2005-2020 Free Software Foundation, Inc.
+/* Copyright (C) 2005-2024 Free Software Foundation, Inc.
 
    This file is part of the GNU C Library.
 
@@ -21,7 +21,8 @@
 
 #include <sysdeps/unix/sysdep.h>
 #include <sysdeps/aarch64/sysdep.h>
-#include <sysdeps/unix/sysv/linux/generic/sysdep.h>
+#include <sysdeps/unix/sysdep.h>
+#include <sysdeps/unix/sysv/linux/sysdep.h>
 
 /* Defines RTLD_PRIVATE_ERRNO and USE_DL_SYSINFO.  */
 #include <dl-sysdep.h>
@@ -164,29 +165,10 @@
 # define HAVE_CLOCK_GETTIME64_VSYSCALL	"__kernel_clock_gettime"
 # define HAVE_GETTIMEOFDAY_VSYSCALL	"__kernel_gettimeofday"
 
-/* Previously AArch64 used the generic version without the libc_hidden_def
-   which lead in a non existent __send symbol in libc.so.  */
-# undef HAVE_INTERNAL_SEND_SYMBOL
-
-# define SINGLE_THREAD_BY_GLOBAL		1
-
-/* Define a macro which expands into the inline wrapper code for a system
-   call.  */
-# undef INLINE_SYSCALL
-# define INLINE_SYSCALL(name, nr, args...)				\
-  ({ unsigned long _sys_result = INTERNAL_SYSCALL (name, , nr, args);	\
-     if (__builtin_expect (INTERNAL_SYSCALL_ERROR_P (_sys_result, ), 0))\
-       {								\
-	 __set_errno (INTERNAL_SYSCALL_ERRNO (_sys_result, ));		\
-	 _sys_result = (unsigned long) -1;				\
-       }								\
-     (long) _sys_result; })
-
-# undef INTERNAL_SYSCALL_DECL
-# define INTERNAL_SYSCALL_DECL(err) do { } while (0)
+# define HAVE_CLONE3_WRAPPER		1
 
 # undef INTERNAL_SYSCALL_RAW
-# define INTERNAL_SYSCALL_RAW(name, err, nr, args...)		\
+# define INTERNAL_SYSCALL_RAW(name, nr, args...)		\
   ({ long _sys_result;						\
      {								\
        LOAD_ARGS_##nr (args)					\
@@ -198,19 +180,12 @@
      _sys_result; })
 
 # undef INTERNAL_SYSCALL
-# define INTERNAL_SYSCALL(name, err, nr, args...)		\
-	INTERNAL_SYSCALL_RAW(SYS_ify(name), err, nr, args)
+# define INTERNAL_SYSCALL(name, nr, args...)			\
+	INTERNAL_SYSCALL_RAW(SYS_ify(name), nr, args)
 
 # undef INTERNAL_SYSCALL_AARCH64
-# define INTERNAL_SYSCALL_AARCH64(name, err, nr, args...)	\
-	INTERNAL_SYSCALL_RAW(__ARM_NR_##name, err, nr, args)
-
-# undef INTERNAL_SYSCALL_ERROR_P
-# define INTERNAL_SYSCALL_ERROR_P(val, err) \
-  ((unsigned long) (val) >= (unsigned long) -4095)
-
-# undef INTERNAL_SYSCALL_ERRNO
-# define INTERNAL_SYSCALL_ERRNO(val, err)	(-(val))
+# define INTERNAL_SYSCALL_AARCH64(name, nr, args...)		\
+	INTERNAL_SYSCALL_RAW(__ARM_NR_##name, nr, args)
 
 # define LOAD_ARGS_0()				\
   register long _x0 asm ("x0");
@@ -253,54 +228,12 @@
 # define ASM_ARGS_7	ASM_ARGS_6, "r" (_x6)
 
 # undef INTERNAL_SYSCALL_NCS
-# define INTERNAL_SYSCALL_NCS(number, err, nr, args...)	\
-	INTERNAL_SYSCALL_RAW (number, err, nr, args)
+# define INTERNAL_SYSCALL_NCS(number, nr, args...)	\
+	INTERNAL_SYSCALL_RAW (number, nr, args)
+
+#undef HAVE_INTERNAL_BRK_ADDR_SYMBOL
+#define HAVE_INTERNAL_BRK_ADDR_SYMBOL 1
 
 #endif	/* __ASSEMBLER__ */
-
-/* Pointer mangling is supported for AArch64.  */
-#if (IS_IN (rtld) \
-     || (!defined SHARED && (IS_IN (libc) \
-			     || IS_IN (libpthread))))
-# ifdef __ASSEMBLER__
-/* Note, dst, src, guard, and tmp are all register numbers rather than
-   register names so they will work with both ILP32 and LP64. */
-#  define PTR_MANGLE(dst, src, guard, tmp)                                \
-  LDST_PCREL (ldr, guard, tmp, C_SYMBOL_NAME(__pointer_chk_guard_local)); \
-  PTR_MANGLE2 (dst, src, guard)
-/* Use PTR_MANGLE2 for efficiency if guard is already loaded.  */
-#  define PTR_MANGLE2(dst, src, guard)\
-  eor x##dst, x##src, x##guard
-#  define PTR_DEMANGLE(dst, src, guard, tmp)\
-  PTR_MANGLE (dst, src, guard, tmp)
-#  define PTR_DEMANGLE2(dst, src, guard)\
-  PTR_MANGLE2 (dst, src, guard)
-# else
-extern uintptr_t __pointer_chk_guard_local attribute_relro attribute_hidden;
-#  define PTR_MANGLE(var) \
-  (var) = (__typeof (var)) ((uintptr_t) (var) ^ __pointer_chk_guard_local)
-#  define PTR_DEMANGLE(var)     PTR_MANGLE (var)
-# endif
-#else
-# ifdef __ASSEMBLER__
-/* Note, dst, src, guard, and tmp are all register numbers rather than
-   register names so they will work with both ILP32 and LP64. */
-#  define PTR_MANGLE(dst, src, guard, tmp)                             \
-  LDST_GLOBAL (ldr, guard, tmp, C_SYMBOL_NAME(__pointer_chk_guard));   \
-  PTR_MANGLE2 (dst, src, guard)
-/* Use PTR_MANGLE2 for efficiency if guard is already loaded.  */
-#  define PTR_MANGLE2(dst, src, guard)\
-  eor x##dst, x##src, x##guard
-#  define PTR_DEMANGLE(dst, src, guard, tmp)\
-  PTR_MANGLE (dst, src, guard, tmp)
-#  define PTR_DEMANGLE2(dst, src, guard)\
-  PTR_MANGLE2 (dst, src, guard)
-# else
-extern uintptr_t __pointer_chk_guard attribute_relro;
-#  define PTR_MANGLE(var) \
-  (var) = (__typeof (var)) ((uintptr_t) (var) ^ __pointer_chk_guard)
-#  define PTR_DEMANGLE(var) PTR_MANGLE (var)
-# endif
-#endif
 
 #endif /* linux/aarch64/sysdep.h */

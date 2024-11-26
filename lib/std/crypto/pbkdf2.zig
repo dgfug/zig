@@ -49,7 +49,7 @@ const WeakParametersError = std.crypto.errors.WeakParametersError;
 ///         Larger iteration counts improve security by increasing the time required to compute
 ///         the dk. It is common to tune this parameter to achieve approximately 100ms.
 ///
-/// Prf: Pseudo-random function to use. A common choice is `std.crypto.auth.hmac.HmacSha256`.
+/// Prf: Pseudo-random function to use. A common choice is `std.crypto.auth.hmac.sha2.HmacSha256`.
 pub fn pbkdf2(dk: []u8, password: []const u8, salt: []const u8, rounds: u32, comptime Prf: type) (WeakParametersError || OutputTooLongError)!void {
     if (rounds < 1) return error.WeakParameters;
 
@@ -74,7 +74,7 @@ pub fn pbkdf2(dk: []u8, password: []const u8, salt: []const u8, rounds: u32, com
     //      block
     //
 
-    const blocks_count = @intCast(u32, std.math.divCeil(usize, dk_len, h_len) catch unreachable);
+    const blocks_count = @as(u32, @intCast(std.math.divCeil(usize, dk_len, h_len) catch unreachable));
     var r = dk_len % h_len;
     if (r == 0) {
         r = h_len;
@@ -129,16 +129,16 @@ pub fn pbkdf2(dk: []u8, password: []const u8, salt: []const u8, rounds: u32, com
         const offset = block * h_len;
         const block_len = if (block != blocks_count - 1) h_len else r;
         const dk_block: []u8 = dk[offset..][0..block_len];
-        mem.copy(u8, dk_block, prev_block[0..dk_block.len]);
+        @memcpy(dk_block, prev_block[0..dk_block.len]);
 
         var i: u32 = 1;
         while (i < rounds) : (i += 1) {
             // U_c = PRF (P, U_{c-1})
             Prf.create(&new_block, prev_block[0..], password);
-            mem.copy(u8, prev_block[0..], new_block[0..]);
+            prev_block = new_block;
 
             // F (P, S, c, i) = U_1 \xor U_2 \xor ... \xor U_c
-            for (dk_block) |_, j| {
+            for (dk_block, 0..) |_, j| {
                 dk_block[j] ^= new_block[j];
             }
         }
@@ -255,10 +255,8 @@ test "Very large dk_len" {
     const c = 1;
     const dk_len = 1 << 33;
 
-    var dk = try std.testing.allocator.alloc(u8, dk_len);
-    defer {
-        std.testing.allocator.free(dk);
-    }
+    const dk = try std.testing.allocator.alloc(u8, dk_len);
+    defer std.testing.allocator.free(dk);
 
     // Just verify this doesn't crash with an overflow
     try pbkdf2(dk, p, s, c, HmacSha1);

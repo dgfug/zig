@@ -5,10 +5,7 @@ const io = std.io;
 const fs = std.fs;
 const fmt = std.fmt;
 const testing = std.testing;
-
 const Target = std.Target;
-const CrossTarget = std.zig.CrossTarget;
-
 const assert = std.debug.assert;
 
 const SparcCpuinfoImpl = struct {
@@ -66,11 +63,58 @@ const SparcCpuinfoImpl = struct {
 const SparcCpuinfoParser = CpuinfoParser(SparcCpuinfoImpl);
 
 test "cpuinfo: SPARC" {
-    try testParser(SparcCpuinfoParser, .sparcv9, &Target.sparc.cpu.niagara2,
+    try testParser(SparcCpuinfoParser, .sparc64, &Target.sparc.cpu.niagara2,
         \\cpu             : UltraSparc T2 (Niagara2)
         \\fpu             : UltraSparc T2 integrated FPU
         \\pmu             : niagara2
         \\type            : sun4v
+    );
+}
+
+const RiscvCpuinfoImpl = struct {
+    model: ?*const Target.Cpu.Model = null,
+
+    const cpu_names = .{
+        .{ "sifive,u54", &Target.riscv.cpu.sifive_u54 },
+        .{ "sifive,u7", &Target.riscv.cpu.sifive_7_series },
+        .{ "sifive,u74", &Target.riscv.cpu.sifive_u74 },
+        .{ "sifive,u74-mc", &Target.riscv.cpu.sifive_u74 },
+    };
+
+    fn line_hook(self: *RiscvCpuinfoImpl, key: []const u8, value: []const u8) !bool {
+        if (mem.eql(u8, key, "uarch")) {
+            inline for (cpu_names) |pair| {
+                if (mem.eql(u8, value, pair[0])) {
+                    self.model = pair[1];
+                    break;
+                }
+            }
+            return false;
+        }
+
+        return true;
+    }
+
+    fn finalize(self: *const RiscvCpuinfoImpl, arch: Target.Cpu.Arch) ?Target.Cpu {
+        const model = self.model orelse return null;
+        return Target.Cpu{
+            .arch = arch,
+            .model = model,
+            .features = model.features,
+        };
+    }
+};
+
+const RiscvCpuinfoParser = CpuinfoParser(RiscvCpuinfoImpl);
+
+test "cpuinfo: RISC-V" {
+    try testParser(RiscvCpuinfoParser, .riscv64, &Target.riscv.cpu.sifive_u74,
+        \\processor : 0
+        \\hart      : 1
+        \\isa       : rv64imafdc
+        \\mmu       : sv39
+        \\isa-ext   :
+        \\uarch     : sifive,u74-mc
     );
 }
 
@@ -84,20 +128,20 @@ const PowerpcCpuinfoImpl = struct {
         .{ "7410", &Target.powerpc.cpu.@"7400" },
         .{ "7447", &Target.powerpc.cpu.@"7400" },
         .{ "7455", &Target.powerpc.cpu.@"7450" },
-        .{ "G4", &Target.powerpc.cpu.@"g4" },
+        .{ "G4", &Target.powerpc.cpu.g4 },
         .{ "POWER4", &Target.powerpc.cpu.@"970" },
         .{ "PPC970FX", &Target.powerpc.cpu.@"970" },
         .{ "PPC970MP", &Target.powerpc.cpu.@"970" },
-        .{ "G5", &Target.powerpc.cpu.@"g5" },
-        .{ "POWER5", &Target.powerpc.cpu.@"g5" },
-        .{ "A2", &Target.powerpc.cpu.@"a2" },
-        .{ "POWER6", &Target.powerpc.cpu.@"pwr6" },
-        .{ "POWER7", &Target.powerpc.cpu.@"pwr7" },
-        .{ "POWER8", &Target.powerpc.cpu.@"pwr8" },
-        .{ "POWER8E", &Target.powerpc.cpu.@"pwr8" },
-        .{ "POWER8NVL", &Target.powerpc.cpu.@"pwr8" },
-        .{ "POWER9", &Target.powerpc.cpu.@"pwr9" },
-        .{ "POWER10", &Target.powerpc.cpu.@"pwr10" },
+        .{ "G5", &Target.powerpc.cpu.g5 },
+        .{ "POWER5", &Target.powerpc.cpu.g5 },
+        .{ "A2", &Target.powerpc.cpu.a2 },
+        .{ "POWER6", &Target.powerpc.cpu.pwr6 },
+        .{ "POWER7", &Target.powerpc.cpu.pwr7 },
+        .{ "POWER8", &Target.powerpc.cpu.pwr8 },
+        .{ "POWER8E", &Target.powerpc.cpu.pwr8 },
+        .{ "POWER8NVL", &Target.powerpc.cpu.pwr8 },
+        .{ "POWER9", &Target.powerpc.cpu.pwr9 },
+        .{ "POWER10", &Target.powerpc.cpu.pwr10 },
     };
 
     fn line_hook(self: *PowerpcCpuinfoImpl, key: []const u8, value: []const u8) !bool {
@@ -133,21 +177,23 @@ const PowerpcCpuinfoParser = CpuinfoParser(PowerpcCpuinfoImpl);
 
 test "cpuinfo: PowerPC" {
     try testParser(PowerpcCpuinfoParser, .powerpc, &Target.powerpc.cpu.@"970",
-        \\processor	: 0
-        \\cpu		: PPC970MP, altivec supported
-        \\clock		: 1250.000000MHz
-        \\revision	: 1.1 (pvr 0044 0101)
+        \\processor : 0
+        \\cpu       : PPC970MP, altivec supported
+        \\clock     : 1250.000000MHz
+        \\revision  : 1.1 (pvr 0044 0101)
     );
     try testParser(PowerpcCpuinfoParser, .powerpc64le, &Target.powerpc.cpu.pwr8,
-        \\processor	: 0
-        \\cpu		: POWER8 (raw), altivec supported
-        \\clock		: 2926.000000MHz
-        \\revision	: 2.0 (pvr 004d 0200)
+        \\processor : 0
+        \\cpu       : POWER8 (raw), altivec supported
+        \\clock     : 2926.000000MHz
+        \\revision  : 2.0 (pvr 004d 0200)
     );
 }
 
 const ArmCpuinfoImpl = struct {
-    cores: [4]CoreInfo = undefined,
+    const num_cores = 4;
+
+    cores: [num_cores]CoreInfo = undefined,
     core_no: usize = 0,
     have_fields: usize = 0,
 
@@ -159,132 +205,10 @@ const ArmCpuinfoImpl = struct {
         is_really_v6: bool = false,
     };
 
-    const cpu_models = struct {
-        // Shorthands to simplify the tables below.
-        const A32 = Target.arm.cpu;
-        const A64 = Target.aarch64.cpu;
-
-        const E = struct {
-            part: u16,
-            variant: ?u8 = null, // null if matches any variant
-            m32: ?*const Target.Cpu.Model = null,
-            m64: ?*const Target.Cpu.Model = null,
-        };
-
-        // implementer = 0x41
-        const ARM = [_]E{
-            E{ .part = 0x926, .m32 = &A32.arm926ej_s, .m64 = null },
-            E{ .part = 0xb02, .m32 = &A32.mpcore, .m64 = null },
-            E{ .part = 0xb36, .m32 = &A32.arm1136j_s, .m64 = null },
-            E{ .part = 0xb56, .m32 = &A32.arm1156t2_s, .m64 = null },
-            E{ .part = 0xb76, .m32 = &A32.arm1176jz_s, .m64 = null },
-            E{ .part = 0xc05, .m32 = &A32.cortex_a5, .m64 = null },
-            E{ .part = 0xc07, .m32 = &A32.cortex_a7, .m64 = null },
-            E{ .part = 0xc08, .m32 = &A32.cortex_a8, .m64 = null },
-            E{ .part = 0xc09, .m32 = &A32.cortex_a9, .m64 = null },
-            E{ .part = 0xc0d, .m32 = &A32.cortex_a17, .m64 = null },
-            E{ .part = 0xc0f, .m32 = &A32.cortex_a15, .m64 = null },
-            E{ .part = 0xc0e, .m32 = &A32.cortex_a17, .m64 = null },
-            E{ .part = 0xc14, .m32 = &A32.cortex_r4, .m64 = null },
-            E{ .part = 0xc15, .m32 = &A32.cortex_r5, .m64 = null },
-            E{ .part = 0xc17, .m32 = &A32.cortex_r7, .m64 = null },
-            E{ .part = 0xc18, .m32 = &A32.cortex_r8, .m64 = null },
-            E{ .part = 0xc20, .m32 = &A32.cortex_m0, .m64 = null },
-            E{ .part = 0xc21, .m32 = &A32.cortex_m1, .m64 = null },
-            E{ .part = 0xc23, .m32 = &A32.cortex_m3, .m64 = null },
-            E{ .part = 0xc24, .m32 = &A32.cortex_m4, .m64 = null },
-            E{ .part = 0xc27, .m32 = &A32.cortex_m7, .m64 = null },
-            E{ .part = 0xc60, .m32 = &A32.cortex_m0plus, .m64 = null },
-            E{ .part = 0xd01, .m32 = &A32.cortex_a32, .m64 = null },
-            E{ .part = 0xd03, .m32 = &A32.cortex_a53, .m64 = &A64.cortex_a53 },
-            E{ .part = 0xd04, .m32 = &A32.cortex_a35, .m64 = &A64.cortex_a35 },
-            E{ .part = 0xd05, .m32 = &A32.cortex_a55, .m64 = &A64.cortex_a55 },
-            E{ .part = 0xd07, .m32 = &A32.cortex_a57, .m64 = &A64.cortex_a57 },
-            E{ .part = 0xd08, .m32 = &A32.cortex_a72, .m64 = &A64.cortex_a72 },
-            E{ .part = 0xd09, .m32 = &A32.cortex_a73, .m64 = &A64.cortex_a73 },
-            E{ .part = 0xd0a, .m32 = &A32.cortex_a75, .m64 = &A64.cortex_a75 },
-            E{ .part = 0xd0b, .m32 = &A32.cortex_a76, .m64 = &A64.cortex_a76 },
-            E{ .part = 0xd0c, .m32 = &A32.neoverse_n1, .m64 = null },
-            E{ .part = 0xd0d, .m32 = &A32.cortex_a77, .m64 = &A64.cortex_a77 },
-            E{ .part = 0xd13, .m32 = &A32.cortex_r52, .m64 = null },
-            E{ .part = 0xd20, .m32 = &A32.cortex_m23, .m64 = null },
-            E{ .part = 0xd21, .m32 = &A32.cortex_m33, .m64 = null },
-            E{ .part = 0xd41, .m32 = &A32.cortex_a78, .m64 = &A64.cortex_a78 },
-            E{ .part = 0xd4b, .m32 = &A32.cortex_a78c, .m64 = &A64.cortex_a78c },
-            E{ .part = 0xd44, .m32 = &A32.cortex_x1, .m64 = &A64.cortex_x1 },
-            E{ .part = 0xd02, .m64 = &A64.cortex_a34 },
-            E{ .part = 0xd06, .m64 = &A64.cortex_a65 },
-            E{ .part = 0xd43, .m64 = &A64.cortex_a65ae },
-        };
-        // implementer = 0x42
-        const Broadcom = [_]E{
-            E{ .part = 0x516, .m64 = &A64.thunderx2t99 },
-        };
-        // implementer = 0x43
-        const Cavium = [_]E{
-            E{ .part = 0x0a0, .m64 = &A64.thunderx },
-            E{ .part = 0x0a2, .m64 = &A64.thunderxt81 },
-            E{ .part = 0x0a3, .m64 = &A64.thunderxt83 },
-            E{ .part = 0x0a1, .m64 = &A64.thunderxt88 },
-            E{ .part = 0x0af, .m64 = &A64.thunderx2t99 },
-        };
-        // implementer = 0x46
-        const Fujitsu = [_]E{
-            E{ .part = 0x001, .m64 = &A64.a64fx },
-        };
-        // implementer = 0x48
-        const HiSilicon = [_]E{
-            E{ .part = 0xd01, .m64 = &A64.tsv110 },
-        };
-        // implementer = 0x4e
-        const Nvidia = [_]E{
-            E{ .part = 0x004, .m64 = &A64.carmel },
-        };
-        // implementer = 0x50
-        const Ampere = [_]E{
-            E{ .part = 0x000, .variant = 3, .m64 = &A64.emag },
-            E{ .part = 0x000, .m64 = &A64.xgene1 },
-        };
-        // implementer = 0x51
-        const Qualcomm = [_]E{
-            E{ .part = 0x06f, .m32 = &A32.krait },
-            E{ .part = 0x201, .m64 = &A64.kryo, .m32 = &A64.kryo },
-            E{ .part = 0x205, .m64 = &A64.kryo, .m32 = &A64.kryo },
-            E{ .part = 0x211, .m64 = &A64.kryo, .m32 = &A64.kryo },
-            E{ .part = 0x800, .m64 = &A64.cortex_a73, .m32 = &A64.cortex_a73 },
-            E{ .part = 0x801, .m64 = &A64.cortex_a73, .m32 = &A64.cortex_a73 },
-            E{ .part = 0x802, .m64 = &A64.cortex_a75, .m32 = &A64.cortex_a75 },
-            E{ .part = 0x803, .m64 = &A64.cortex_a75, .m32 = &A64.cortex_a75 },
-            E{ .part = 0x804, .m64 = &A64.cortex_a76, .m32 = &A64.cortex_a76 },
-            E{ .part = 0x805, .m64 = &A64.cortex_a76, .m32 = &A64.cortex_a76 },
-            E{ .part = 0xc00, .m64 = &A64.falkor },
-            E{ .part = 0xc01, .m64 = &A64.saphira },
-        };
-
-        fn isKnown(core: CoreInfo, is_64bit: bool) ?*const Target.Cpu.Model {
-            const models = switch (core.implementer) {
-                0x41 => &ARM,
-                0x42 => &Broadcom,
-                0x43 => &Cavium,
-                0x46 => &Fujitsu,
-                0x48 => &HiSilicon,
-                0x50 => &Ampere,
-                0x51 => &Qualcomm,
-                else => return null,
-            };
-
-            for (models) |model| {
-                if (model.part == core.part and
-                    (model.variant == null or model.variant.? == core.variant))
-                    return if (is_64bit) model.m64 else model.m32;
-            }
-
-            return null;
-        }
-    };
+    const cpu_models = @import("arm.zig").cpu_models;
 
     fn addOne(self: *ArmCpuinfoImpl) void {
-        if (self.have_fields == 4 and self.core_no < self.cores.len) {
+        if (self.have_fields == 4 and self.core_no < num_cores) {
             if (self.core_no > 0) {
                 // Deduplicate the core info.
                 for (self.cores[0..self.core_no]) |it| {
@@ -340,13 +264,18 @@ const ArmCpuinfoImpl = struct {
         if (self.core_no == 0) return null;
 
         const is_64bit = switch (arch) {
-            .aarch64, .aarch64_be, .aarch64_32 => true,
+            .aarch64, .aarch64_be => true,
             else => false,
         };
 
-        var known_models: [self.cores.len]?*const Target.Cpu.Model = undefined;
-        for (self.cores[0..self.core_no]) |core, i| {
-            known_models[i] = cpu_models.isKnown(core, is_64bit);
+        var known_models: [num_cores]?*const Target.Cpu.Model = undefined;
+        for (self.cores[0..self.core_no], 0..) |core, i| {
+            known_models[i] = cpu_models.isKnown(.{
+                .architecture = core.architecture,
+                .implementer = core.implementer,
+                .variant = core.variant,
+                .part = core.part,
+            }, is_64bit);
         }
 
         // XXX We pick the first core on big.LITTLE systems, hopefully the
@@ -375,25 +304,25 @@ test "cpuinfo: ARM" {
         \\CPU revision    : 7
     );
     try testParser(ArmCpuinfoParser, .arm, &Target.arm.cpu.cortex_a7,
-        \\processor	: 0
-        \\model name	: ARMv7 Processor rev 3 (v7l)
-        \\BogoMIPS	: 18.00
-        \\Features	: half thumb fastmult vfp edsp neon vfpv3 tls vfpv4 idiva idivt vfpd32 lpae
-        \\CPU implementer	: 0x41
+        \\processor : 0
+        \\model name : ARMv7 Processor rev 3 (v7l)
+        \\BogoMIPS : 18.00
+        \\Features : half thumb fastmult vfp edsp neon vfpv3 tls vfpv4 idiva idivt vfpd32 lpae
+        \\CPU implementer : 0x41
         \\CPU architecture: 7
-        \\CPU variant	: 0x0
-        \\CPU part	: 0xc07
-        \\CPU revision	: 3
+        \\CPU variant : 0x0
+        \\CPU part : 0xc07
+        \\CPU revision : 3
         \\
-        \\processor	: 4
-        \\model name	: ARMv7 Processor rev 3 (v7l)
-        \\BogoMIPS	: 90.00
-        \\Features	: half thumb fastmult vfp edsp neon vfpv3 tls vfpv4 idiva idivt vfpd32 lpae
-        \\CPU implementer	: 0x41
+        \\processor : 4
+        \\model name : ARMv7 Processor rev 3 (v7l)
+        \\BogoMIPS : 90.00
+        \\Features : half thumb fastmult vfp edsp neon vfpv3 tls vfpv4 idiva idivt vfpd32 lpae
+        \\CPU implementer : 0x41
         \\CPU architecture: 7
-        \\CPU variant	: 0x2
-        \\CPU part	: 0xc0f
-        \\CPU revision	: 3
+        \\CPU variant : 0x2
+        \\CPU part : 0xc0f
+        \\CPU revision : 3
     );
     try testParser(ArmCpuinfoParser, .aarch64, &Target.aarch64.cpu.cortex_a72,
         \\processor       : 0
@@ -445,22 +374,50 @@ fn CpuinfoParser(comptime impl: anytype) type {
     };
 }
 
+inline fn getAArch64CpuFeature(comptime feat_reg: []const u8) u64 {
+    return asm ("mrs %[ret], " ++ feat_reg
+        : [ret] "=r" (-> u64),
+    );
+}
+
 pub fn detectNativeCpuAndFeatures() ?Target.Cpu {
-    var f = fs.openFileAbsolute("/proc/cpuinfo", .{ .intended_io_mode = .blocking }) catch |err| switch (err) {
+    var f = fs.openFileAbsolute("/proc/cpuinfo", .{}) catch |err| switch (err) {
         else => return null,
     };
     defer f.close();
 
     const current_arch = builtin.cpu.arch;
     switch (current_arch) {
-        .arm, .armeb, .thumb, .thumbeb, .aarch64, .aarch64_be, .aarch64_32 => {
+        .arm, .armeb, .thumb, .thumbeb => {
             return ArmCpuinfoParser.parse(current_arch, f.reader()) catch null;
         },
-        .sparcv9 => {
+        .aarch64, .aarch64_be => {
+            const registers = [12]u64{
+                getAArch64CpuFeature("MIDR_EL1"),
+                getAArch64CpuFeature("ID_AA64PFR0_EL1"),
+                getAArch64CpuFeature("ID_AA64PFR1_EL1"),
+                getAArch64CpuFeature("ID_AA64DFR0_EL1"),
+                getAArch64CpuFeature("ID_AA64DFR1_EL1"),
+                getAArch64CpuFeature("ID_AA64AFR0_EL1"),
+                getAArch64CpuFeature("ID_AA64AFR1_EL1"),
+                getAArch64CpuFeature("ID_AA64ISAR0_EL1"),
+                getAArch64CpuFeature("ID_AA64ISAR1_EL1"),
+                getAArch64CpuFeature("ID_AA64MMFR0_EL1"),
+                getAArch64CpuFeature("ID_AA64MMFR1_EL1"),
+                getAArch64CpuFeature("ID_AA64MMFR2_EL1"),
+            };
+
+            const core = @import("arm.zig").aarch64.detectNativeCpuAndFeatures(current_arch, registers);
+            return core;
+        },
+        .sparc64 => {
             return SparcCpuinfoParser.parse(current_arch, f.reader()) catch null;
         },
         .powerpc, .powerpcle, .powerpc64, .powerpc64le => {
             return PowerpcCpuinfoParser.parse(current_arch, f.reader()) catch null;
+        },
+        .riscv64, .riscv32 => {
+            return RiscvCpuinfoParser.parse(current_arch, f.reader()) catch null;
         },
         else => {},
     }

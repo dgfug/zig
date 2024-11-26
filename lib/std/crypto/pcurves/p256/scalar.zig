@@ -20,9 +20,12 @@ const Fe = Field(.{
     .fiat = @import("p256_scalar_64.zig"),
     .field_order = 115792089210356248762697446949407573529996955224135760342422259061068512044369,
     .field_bits = 256,
-    .saturated_bits = 255,
+    .saturated_bits = 256,
     .encoded_length = encoded_length,
 });
+
+/// The scalar field order.
+pub const field_order = Fe.field_order;
 
 /// Reject a scalar whose encoding is not canonical.
 pub fn rejectNonCanonical(s: CompressedScalar, endian: std.builtin.Endian) NonCanonicalError!void {
@@ -36,7 +39,7 @@ pub fn reduce48(s: [48]u8, endian: std.builtin.Endian) CompressedScalar {
 
 /// Reduce a 64-bytes scalar to the field size.
 pub fn reduce64(s: [64]u8, endian: std.builtin.Endian) CompressedScalar {
-    return ScalarDouble.fromBytes64(s, endian).toBytes(endian);
+    return Scalar.fromBytes64(s, endian).toBytes(endian);
 }
 
 /// Return a*b (mod L)
@@ -61,7 +64,7 @@ pub fn neg(s: CompressedScalar, endian: std.builtin.Endian) NonCanonicalError!Co
 
 /// Return (a-b) (mod L)
 pub fn sub(a: CompressedScalar, b: CompressedScalar, endian: std.builtin.Endian) NonCanonicalError!CompressedScalar {
-    return (try Scalar.fromBytes(a, endian)).sub(try Scalar.fromBytes(b.endian)).toBytes(endian);
+    return (try Scalar.fromBytes(a, endian)).sub(try Scalar.fromBytes(b, endian)).toBytes(endian);
 }
 
 /// Return a random scalar
@@ -104,6 +107,11 @@ pub const Scalar = struct {
     /// Return true if the scalar is zero..
     pub fn isZero(n: Scalar) bool {
         return n.fe.isZero();
+    }
+
+    /// Return true if the scalar is odd.
+    pub fn isOdd(n: Scalar) bool {
+        return n.fe.isOdd();
     }
 
     /// Return true if a and b are equivalent.
@@ -152,7 +160,7 @@ pub const Scalar = struct {
     }
 
     /// Return true if n is a quadratic residue mod L.
-    pub fn isSquare(n: Scalar) Scalar {
+    pub fn isSquare(n: Scalar) bool {
         return n.fe.isSquare();
     }
 
@@ -166,7 +174,7 @@ pub const Scalar = struct {
         var s: [48]u8 = undefined;
         while (true) {
             crypto.random.bytes(&s);
-            const n = Scalar.fromBytes48(s, .Little);
+            const n = Scalar.fromBytes48(s, .little);
             if (!n.isZero()) {
                 return n;
             }
@@ -183,27 +191,27 @@ const ScalarDouble = struct {
         debug.assert(bits > 0 and bits <= 512 and bits >= Fe.saturated_bits and bits <= Fe.saturated_bits * 3);
 
         var s = s_;
-        if (endian == .Big) {
-            for (s_) |x, i| s[s.len - 1 - i] = x;
+        if (endian == .big) {
+            for (s_, 0..) |x, i| s[s.len - 1 - i] = x;
         }
         var t = ScalarDouble{ .x1 = undefined, .x2 = Fe.zero, .x3 = Fe.zero };
         {
             var b = [_]u8{0} ** encoded_length;
-            const len = math.min(s.len, 24);
-            mem.copy(u8, b[0..len], s[0..len]);
-            t.x1 = Fe.fromBytes(b, .Little) catch unreachable;
+            const len = @min(s.len, 24);
+            b[0..len].* = s[0..len].*;
+            t.x1 = Fe.fromBytes(b, .little) catch unreachable;
         }
         if (s_.len >= 24) {
             var b = [_]u8{0} ** encoded_length;
-            const len = math.min(s.len - 24, 24);
-            mem.copy(u8, b[0..len], s[24..][0..len]);
-            t.x2 = Fe.fromBytes(b, .Little) catch unreachable;
+            const len = @min(s.len - 24, 24);
+            b[0..len].* = s[24..][0..len].*;
+            t.x2 = Fe.fromBytes(b, .little) catch unreachable;
         }
         if (s_.len >= 48) {
             var b = [_]u8{0} ** encoded_length;
             const len = s.len - 48;
-            mem.copy(u8, b[0..len], s[48..][0..len]);
-            t.x3 = Fe.fromBytes(b, .Little) catch unreachable;
+            b[0..len].* = s[48..][0..len].*;
+            t.x3 = Fe.fromBytes(b, .little) catch unreachable;
         }
         return t;
     }

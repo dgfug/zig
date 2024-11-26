@@ -11,8 +11,8 @@ const cmath = math.complex;
 const Complex = cmath.Complex;
 
 /// Returns the arc-tangent of z.
-pub fn atan(z: anytype) @TypeOf(z) {
-    const T = @TypeOf(z.re);
+pub fn atan(z: anytype) Complex(@TypeOf(z.re, z.im)) {
+    const T = @TypeOf(z.re, z.im);
     return switch (T) {
         f32 => atan32(z),
         f64 => atan64(z),
@@ -32,41 +32,26 @@ fn redupif32(x: f32) f32 {
         t -= 0.5;
     }
 
-    const u = @intToFloat(f32, @floatToInt(i32, t));
-    return ((x - u * DP1) - u * DP2) - t * DP3;
+    const u: f32 = @trunc(t);
+    return ((x - u * DP1) - u * DP2) - u * DP3;
 }
 
 fn atan32(z: Complex(f32)) Complex(f32) {
-    const maxnum = 1.0e38;
-
     const x = z.re;
     const y = z.im;
 
-    if ((x == 0.0) and (y > 1.0)) {
-        // overflow
-        return Complex(f32).init(maxnum, maxnum);
-    }
-
     const x2 = x * x;
     var a = 1.0 - x2 - (y * y);
-    if (a == 0.0) {
-        // overflow
-        return Complex(f32).init(maxnum, maxnum);
-    }
 
-    var t = 0.5 * math.atan2(f32, 2.0 * x, a);
-    var w = redupif32(t);
+    var t = 0.5 * math.atan2(2.0 * x, a);
+    const w = redupif32(t);
 
     t = y - 1.0;
     a = x2 + t * t;
-    if (a == 0.0) {
-        // overflow
-        return Complex(f32).init(maxnum, maxnum);
-    }
 
     t = y + 1.0;
     a = (x2 + (t * t)) / a;
-    return Complex(f32).init(w, 0.25 * math.ln(a));
+    return Complex(f32).init(w, 0.25 * @log(a));
 }
 
 fn redupif64(x: f64) f64 {
@@ -81,57 +66,42 @@ fn redupif64(x: f64) f64 {
         t -= 0.5;
     }
 
-    const u = @intToFloat(f64, @floatToInt(i64, t));
-    return ((x - u * DP1) - u * DP2) - t * DP3;
+    const u: f64 = @trunc(t);
+    return ((x - u * DP1) - u * DP2) - u * DP3;
 }
 
 fn atan64(z: Complex(f64)) Complex(f64) {
-    const maxnum = 1.0e308;
-
     const x = z.re;
     const y = z.im;
 
-    if ((x == 0.0) and (y > 1.0)) {
-        // overflow
-        return Complex(f64).init(maxnum, maxnum);
-    }
-
     const x2 = x * x;
     var a = 1.0 - x2 - (y * y);
-    if (a == 0.0) {
-        // overflow
-        return Complex(f64).init(maxnum, maxnum);
-    }
 
-    var t = 0.5 * math.atan2(f64, 2.0 * x, a);
-    var w = redupif64(t);
+    var t = 0.5 * math.atan2(2.0 * x, a);
+    const w = redupif64(t);
 
     t = y - 1.0;
     a = x2 + t * t;
-    if (a == 0.0) {
-        // overflow
-        return Complex(f64).init(maxnum, maxnum);
-    }
 
     t = y + 1.0;
     a = (x2 + (t * t)) / a;
-    return Complex(f64).init(w, 0.25 * math.ln(a));
+    return Complex(f64).init(w, 0.25 * @log(a));
 }
 
-const epsilon = 0.0001;
-
-test "complex.catan32" {
+test atan32 {
+    const epsilon = math.floatEps(f32);
     const a = Complex(f32).init(5, 3);
     const c = atan(a);
 
-    try testing.expect(math.approxEqAbs(f32, c.re, 1.423679, epsilon));
-    try testing.expect(math.approxEqAbs(f32, c.im, 0.086569, epsilon));
+    try testing.expectApproxEqAbs(1.423679, c.re, epsilon);
+    try testing.expectApproxEqAbs(0.086569, c.im, epsilon);
 }
 
-test "complex.catan64" {
+test atan64 {
+    const epsilon = math.floatEps(f64);
     const a = Complex(f64).init(5, 3);
     const c = atan(a);
 
-    try testing.expect(math.approxEqAbs(f64, c.re, 1.423679, epsilon));
-    try testing.expect(math.approxEqAbs(f64, c.im, 0.086569, epsilon));
+    try testing.expectApproxEqAbs(1.4236790442393028, c.re, epsilon);
+    try testing.expectApproxEqAbs(0.08656905917945844, c.im, epsilon);
 }

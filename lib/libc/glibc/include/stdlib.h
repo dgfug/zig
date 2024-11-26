@@ -1,13 +1,25 @@
 #ifndef _STDLIB_H
 
 #ifndef _ISOMAC
+# include <stdbool.h>
 # include <stddef.h>
 #endif
+
+/* Workaround PR90731 with GCC 9 when using ldbl redirects in C++.  */
+#include <bits/floatn.h>
+#if defined __cplusplus && __LDOUBLE_REDIRECTS_TO_FLOAT128_ABI == 1
+# if __GNUC_PREREQ (9, 0) && !__GNUC_PREREQ (9, 3)
+#   pragma GCC system_header
+# endif
+#endif
+
 #include <stdlib/stdlib.h>
 
 /* Now define the internal interfaces.  */
 #if !defined _ISOMAC
 # include <sys/stat.h>
+
+# include <rtld-malloc.h>
 
 extern __typeof (strtol_l) __strtol_l;
 extern __typeof (strtoul_l) __strtoul_l;
@@ -23,6 +35,47 @@ libc_hidden_proto (__strtoull_l)
 libc_hidden_proto (__strtod_l)
 libc_hidden_proto (__strtof_l)
 libc_hidden_proto (__strtold_l)
+
+extern __typeof (strtol) __isoc23_strtol __attribute_copy__ (strtol);
+extern __typeof (strtoul) __isoc23_strtoul __attribute_copy__ (strtoul);
+extern __typeof (strtoll) __isoc23_strtoll __attribute_copy__ (strtoll);
+extern __typeof (strtoull) __isoc23_strtoull __attribute_copy__ (strtoull);
+extern __typeof (strtol_l) __isoc23_strtol_l __attribute_copy__ (strtol_l);
+extern __typeof (strtoul_l) __isoc23_strtoul_l __attribute_copy__ (strtoul_l);
+extern __typeof (strtoll_l) __isoc23_strtoll_l __attribute_copy__ (strtoll_l);
+extern __typeof (strtoull_l) __isoc23_strtoull_l __attribute_copy__ (strtoull_l);
+libc_hidden_proto (__isoc23_strtol)
+libc_hidden_proto (__isoc23_strtoul)
+libc_hidden_proto (__isoc23_strtoll)
+libc_hidden_proto (__isoc23_strtoull)
+libc_hidden_proto (__isoc23_strtol_l)
+libc_hidden_proto (__isoc23_strtoul_l)
+libc_hidden_proto (__isoc23_strtoll_l)
+libc_hidden_proto (__isoc23_strtoull_l)
+
+#if __GLIBC_USE (C23_STRTOL)
+/* Redirect internal uses of these functions to the C23 versions; the
+   redirection in the installed header does not work with
+   libc_hidden_proto.  */
+# undef strtol
+# define strtol __isoc23_strtol
+# undef atoi
+# define atoi(nptr) __isoc23_strtol(nptr, NULL, 10)
+# undef strtoul
+# define strtoul __isoc23_strtoul
+# undef strtoll
+# define strtoll __isoc23_strtoll
+# undef strtoull
+# define strtoull __isoc23_strtoull
+# undef strtol_l
+# define strtol_l __isoc23_strtol_l
+# undef strtoul_l
+# define strtoul_l __isoc23_strtoul_l
+# undef strtoll_l
+# define strtoll_l __isoc23_strtoll_l
+# undef strtoull_l
+# define strtoull_l __isoc23_strtoull_l
+#endif
 
 libc_hidden_proto (exit)
 libc_hidden_proto (abort)
@@ -80,6 +133,7 @@ extern int __setenv (const char *__name, const char *__value, int __replace)
 extern int __unsetenv (const char *__name) attribute_hidden;
 extern int __clearenv (void) attribute_hidden;
 extern char *__mktemp (char *__template) __THROW __nonnull ((1));
+libc_hidden_proto (__mktemp)
 extern char *__canonicalize_file_name (const char *__name);
 extern char *__realpath (const char *__name, char *__resolved);
 libc_hidden_proto (__realpath)
@@ -95,8 +149,6 @@ extern int __posix_openpt (int __oflag) attribute_hidden;
 extern int __add_to_environ (const char *name, const char *value,
 			     const char *combines, int replace)
      attribute_hidden;
-extern void _quicksort (void *const pbase, size_t total_elems,
-			size_t size, __compar_d_fn_t cmp, void *arg);
 
 extern int __on_exit (void (*__func) (int __status, void *__arg), void *__arg);
 
@@ -105,11 +157,7 @@ libc_hidden_proto (__cxa_atexit);
 
 extern int __cxa_thread_atexit_impl (void (*func) (void *), void *arg,
 				     void *d);
-extern void __call_tls_dtors (void)
-#ifndef SHARED
-  __attribute__ ((weak))
-#endif
-  ;
+extern void __call_tls_dtors (void);
 libc_hidden_proto (__call_tls_dtors)
 
 extern void __cxa_finalize (void *d);
@@ -125,6 +173,21 @@ libc_hidden_proto (__libc_reallocarray)
 
 extern int __libc_system (const char *line);
 
+extern __typeof (getpt) __getpt;
+extern __typeof (ptsname_r) __ptsname_r;
+libc_hidden_proto (__getpt)
+libc_hidden_proto (__ptsname_r)
+libc_hidden_proto (grantpt)
+libc_hidden_proto (unlockpt)
+
+__typeof (arc4random) __arc4random;
+libc_hidden_proto (__arc4random);
+__typeof (arc4random_buf) __arc4random_buf;
+libc_hidden_proto (__arc4random_buf);
+__typeof (arc4random_uniform) __arc4random_uniform;
+libc_hidden_proto (__arc4random_uniform);
+extern void __arc4random_buf_internal (void *buffer, size_t len)
+     attribute_hidden;
 
 extern double __strtod_internal (const char *__restrict __nptr,
 				 char **__restrict __endptr, int __group)
@@ -175,23 +238,25 @@ extern long double ____strtold_l_internal (const char *__restrict __nptr,
 extern long int ____strtol_l_internal (const char *__restrict __nptr,
 				       char **__restrict __endptr,
 				       int __base, int __group,
-				       locale_t __loc);
+				       bool __bin_cst, locale_t __loc);
 extern unsigned long int ____strtoul_l_internal (const char *
 						 __restrict __nptr,
 						 char **__restrict __endptr,
 						 int __base, int __group,
+						 bool __bin_cst,
 						 locale_t __loc);
 __extension__
 extern long long int ____strtoll_l_internal (const char *__restrict __nptr,
 					     char **__restrict __endptr,
 					     int __base, int __group,
-					     locale_t __loc);
+					     bool __bin_cst, locale_t __loc);
 __extension__
 extern unsigned long long int ____strtoull_l_internal (const char *
 						       __restrict __nptr,
 						       char **
 						       __restrict __endptr,
 						       int __base, int __group,
+						       bool __bin_cst,
 						       locale_t __loc);
 
 libc_hidden_proto (____strtof_l_internal)
@@ -205,7 +270,7 @@ libc_hidden_proto (____strtoull_l_internal)
 #include <bits/floatn.h>
 libc_hidden_proto (strtof)
 libc_hidden_proto (strtod)
-#if __LONG_DOUBLE_USES_FLOAT128 == 0
+#if __LDOUBLE_REDIRECTS_TO_FLOAT128_ABI == 0
 libc_hidden_proto (strtold)
 #endif
 libc_hidden_proto (strtol)
@@ -288,9 +353,6 @@ libc_hidden_proto (__qfcvt_r)
 #  define MB_CUR_MAX (_NL_CURRENT_WORD (LC_CTYPE, _NL_CTYPE_MB_CUR_MAX))
 # endif
 
-extern void *__default_morecore (ptrdiff_t) __THROW;
-libc_hidden_proto (__default_morecore)
-
 struct abort_msg_s
 {
   unsigned int size;
@@ -299,7 +361,7 @@ struct abort_msg_s
 extern struct abort_msg_s *__abort_msg;
 libc_hidden_proto (__abort_msg)
 
-# if IS_IN (rtld) && !defined NO_RTLD_HIDDEN
+# if IS_IN (rtld)
 extern __typeof (unsetenv) unsetenv attribute_hidden;
 extern __typeof (__strtoul_internal) __strtoul_internal attribute_hidden;
 # endif

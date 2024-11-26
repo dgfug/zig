@@ -400,12 +400,17 @@ struct task_vm_info {
 
 	/* added for rev5 */
 	integer_t decompressions;
+
+	/* added for rev6 */
+	int64_t ledger_swapins;
 };
 typedef struct task_vm_info     task_vm_info_data_t;
 typedef struct task_vm_info     *task_vm_info_t;
 #define TASK_VM_INFO_COUNT      ((mach_msg_type_number_t) \
 	        (sizeof (task_vm_info_data_t) / sizeof (natural_t)))
-#define TASK_VM_INFO_REV5_COUNT TASK_VM_INFO_COUNT
+#define TASK_VM_INFO_REV6_COUNT TASK_VM_INFO_COUNT
+#define TASK_VM_INFO_REV5_COUNT /* doesn't include ledger swapins */ \
+	((mach_msg_type_number_t) (TASK_VM_INFO_REV6_COUNT - 2))
 #define TASK_VM_INFO_REV4_COUNT /* doesn't include decompressions */ \
 	((mach_msg_type_number_t) (TASK_VM_INFO_REV5_COUNT - 1))
 #define TASK_VM_INFO_REV3_COUNT /* doesn't include limit bytes */ \
@@ -487,6 +492,7 @@ typedef struct task_flags_info * task_flags_info_t;
 #define TASK_DEBUG_INFO_INTERNAL    29 /* Used for kernel internal development tests. */
 
 
+
 /*
  * Type to control EXC_GUARD delivery options for a task
  * via task_get/set_exc_guard_behavior interface(s).
@@ -494,6 +500,7 @@ typedef struct task_flags_info * task_flags_info_t;
 typedef uint32_t task_exc_guard_behavior_t;
 
 /* EXC_GUARD optional delivery settings on a per-task basis */
+#define TASK_EXC_GUARD_NONE                  0x00
 #define TASK_EXC_GUARD_VM_DELIVER            0x01 /* Deliver virtual memory EXC_GUARD exceptions */
 #define TASK_EXC_GUARD_VM_ONCE               0x02 /* Deliver them only once */
 #define TASK_EXC_GUARD_VM_CORPSE             0x04 /* Deliver them via a forked corpse */
@@ -507,6 +514,15 @@ typedef uint32_t task_exc_guard_behavior_t;
 #define TASK_EXC_GUARD_MP_ALL                0xf0
 
 #define TASK_EXC_GUARD_ALL                   0xff /* All optional deliver settings */
+
+
+/*
+ * Type to control corpse forking options for a task
+ * via task_get/set_corpse_forking_behavior interface(s).
+ */
+typedef uint32_t task_corpse_forking_behavior_t;
+
+#define TASK_CORPSE_FORKING_DISABLED_MEM_DIAG  0x01 /* Disable corpse forking because the task is running under a diagnostic tool */
 
 
 /*

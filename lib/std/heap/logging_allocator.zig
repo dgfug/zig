@@ -15,25 +15,31 @@ pub fn LoggingAllocator(
 /// with the given scope on every call to the allocator.
 /// For logging to a `std.io.Writer` see `std.heap.LogToWriterAllocator`
 pub fn ScopedLoggingAllocator(
-    comptime scope: @Type(.EnumLiteral),
+    comptime scope: @Type(.enum_literal),
     comptime success_log_level: std.log.Level,
     comptime failure_log_level: std.log.Level,
 ) type {
     const log = std.log.scoped(scope);
 
     return struct {
-        allocator: Allocator,
-        parent_allocator: *Allocator,
+        parent_allocator: Allocator,
 
         const Self = @This();
 
-        pub fn init(parent_allocator: *Allocator) Self {
+        pub fn init(parent_allocator: Allocator) Self {
             return .{
-                .allocator = Allocator{
-                    .allocFn = alloc,
-                    .resizeFn = resize,
-                },
                 .parent_allocator = parent_allocator,
+            };
+        }
+
+        pub fn allocator(self: *Self) Allocator {
+            return .{
+                .ptr = self,
+                .vtable = &.{
+                    .alloc = alloc,
+                    .resize = resize,
+                    .free = free,
+                },
             };
         }
 
@@ -48,67 +54,73 @@ pub fn ScopedLoggingAllocator(
         }
 
         fn alloc(
-            allocator: *Allocator,
+            ctx: *anyopaque,
             len: usize,
-            ptr_align: u29,
-            len_align: u29,
+            log2_ptr_align: u8,
             ra: usize,
-        ) error{OutOfMemory}![]u8 {
-            const self = @fieldParentPtr(Self, "allocator", allocator);
-            const result = self.parent_allocator.allocFn(self.parent_allocator, len, ptr_align, len_align, ra);
-            if (result) |_| {
+        ) ?[*]u8 {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            const result = self.parent_allocator.rawAlloc(len, log2_ptr_align, ra);
+            if (result != null) {
                 logHelper(
                     success_log_level,
-                    "alloc - success - len: {}, ptr_align: {}, len_align: {}",
-                    .{ len, ptr_align, len_align },
+                    "alloc - success - len: {}, ptr_align: {}",
+                    .{ len, log2_ptr_align },
                 );
-            } else |err| {
+            } else {
                 logHelper(
                     failure_log_level,
-                    "alloc - failure: {s} - len: {}, ptr_align: {}, len_align: {}",
-                    .{ @errorName(err), len, ptr_align, len_align },
+                    "alloc - failure: OutOfMemory - len: {}, ptr_align: {}",
+                    .{ len, log2_ptr_align },
                 );
             }
             return result;
         }
 
         fn resize(
-            allocator: *Allocator,
+            ctx: *anyopaque,
             buf: []u8,
-            buf_align: u29,
+            log2_buf_align: u8,
             new_len: usize,
-            len_align: u29,
             ra: usize,
-        ) error{OutOfMemory}!usize {
-            const self = @fieldParentPtr(Self, "allocator", allocator);
-
-            if (self.parent_allocator.resizeFn(self.parent_allocator, buf, buf_align, new_len, len_align, ra)) |resized_len| {
-                if (new_len == 0) {
-                    logHelper(success_log_level, "free - success - len: {}", .{buf.len});
-                } else if (new_len <= buf.len) {
+        ) bool {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            if (self.parent_allocator.rawResize(buf, log2_buf_align, new_len, ra)) {
+                if (new_len <= buf.len) {
                     logHelper(
                         success_log_level,
-                        "shrink - success - {} to {}, len_align: {}, buf_align: {}",
-                        .{ buf.len, new_len, len_align, buf_align },
+                        "shrink - success - {} to {}, buf_align: {}",
+                        .{ buf.len, new_len, log2_buf_align },
                     );
                 } else {
                     logHelper(
                         success_log_level,
-                        "expand - success - {} to {}, len_align: {}, buf_align: {}",
-                        .{ buf.len, new_len, len_align, buf_align },
+                        "expand - success - {} to {}, buf_align: {}",
+                        .{ buf.len, new_len, log2_buf_align },
                     );
                 }
 
-                return resized_len;
-            } else |err| {
-                std.debug.assert(new_len > buf.len);
-                logHelper(
-                    failure_log_level,
-                    "expand - failure: {s} - {} to {}, len_align: {}, buf_align: {}",
-                    .{ @errorName(err), buf.len, new_len, len_align, buf_align },
-                );
-                return err;
+                return true;
             }
+
+            std.debug.assert(new_len > buf.len);
+            logHelper(
+                failure_log_level,
+                "expand - failure - {} to {}, buf_align: {}",
+                .{ buf.len, new_len, log2_buf_align },
+            );
+            return false;
+        }
+
+        fn free(
+            ctx: *anyopaque,
+            buf: []u8,
+            log2_buf_align: u8,
+            ra: usize,
+        ) void {
+            const self: *Self = @ptrCast(@alignCast(ctx));
+            self.parent_allocator.rawFree(buf, log2_buf_align, ra);
+            logHelper(success_log_level, "free - len: {}", .{buf.len});
         }
     };
 }
@@ -116,6 +128,6 @@ pub fn ScopedLoggingAllocator(
 /// This allocator is used in front of another allocator and logs to `std.log`
 /// on every call to the allocator.
 /// For logging to a `std.io.Writer` see `std.heap.LogToWriterAllocator`
-pub fn loggingAllocator(parent_allocator: *Allocator) LoggingAllocator(.debug, .err) {
+pub fn loggingAllocator(parent_allocator: Allocator) LoggingAllocator(.debug, .err) {
     return LoggingAllocator(.debug, .err).init(parent_allocator);
 }

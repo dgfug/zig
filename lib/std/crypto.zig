@@ -1,8 +1,29 @@
+//! Cryptography.
+
+const root = @import("root");
+
+pub const timing_safe = @import("crypto/timing_safe.zig");
+
 /// Authenticated Encryption with Associated Data
 pub const aead = struct {
     pub const aegis = struct {
-        pub const Aegis128L = @import("crypto/aegis.zig").Aegis128L;
-        pub const Aegis256 = @import("crypto/aegis.zig").Aegis256;
+        const variants = @import("crypto/aegis.zig");
+
+        pub const Aegis128X4 = variants.Aegis128X4;
+        pub const Aegis128X2 = variants.Aegis128X2;
+        pub const Aegis128L = variants.Aegis128L;
+
+        pub const Aegis256X4 = variants.Aegis256X4;
+        pub const Aegis256X2 = variants.Aegis256X2;
+        pub const Aegis256 = variants.Aegis256;
+
+        pub const Aegis128X4_256 = variants.Aegis128X4_256;
+        pub const Aegis128X2_256 = variants.Aegis128X2_256;
+        pub const Aegis128L_256 = variants.Aegis128L_256;
+
+        pub const Aegis256X4_256 = variants.Aegis256X4_256;
+        pub const Aegis256X2_256 = variants.Aegis256X2_256;
+        pub const Aegis256_256 = variants.Aegis256_256;
     };
 
     pub const aes_gcm = struct {
@@ -14,8 +35,6 @@ pub const aead = struct {
         pub const Aes128Ocb = @import("crypto/aes_ocb.zig").Aes128Ocb;
         pub const Aes256Ocb = @import("crypto/aes_ocb.zig").Aes256Ocb;
     };
-
-    pub const Gimli = @import("crypto/gimli.zig").Aead;
 
     pub const chacha_poly = struct {
         pub const ChaCha20Poly1305 = @import("crypto/chacha20.zig").ChaCha20Poly1305;
@@ -37,12 +56,33 @@ pub const aead = struct {
 pub const auth = struct {
     pub const hmac = @import("crypto/hmac.zig");
     pub const siphash = @import("crypto/siphash.zig");
+    pub const aegis = struct {
+        const variants = @import("crypto/aegis.zig");
+        pub const Aegis128X4Mac = variants.Aegis128X4Mac;
+        pub const Aegis128X2Mac = variants.Aegis128X2Mac;
+        pub const Aegis128LMac = variants.Aegis128LMac;
+
+        pub const Aegis256X4Mac = variants.Aegis256X4Mac;
+        pub const Aegis256X2Mac = variants.Aegis256X2Mac;
+        pub const Aegis256Mac = variants.Aegis256Mac;
+
+        pub const Aegis128X4Mac_128 = variants.Aegis128X4Mac_128;
+        pub const Aegis128X2Mac_128 = variants.Aegis128X2Mac_128;
+        pub const Aegis128LMac_128 = variants.Aegis128LMac_128;
+
+        pub const Aegis256X4Mac_128 = variants.Aegis256X4Mac_128;
+        pub const Aegis256X2Mac_128 = variants.Aegis256X2Mac_128;
+        pub const Aegis256Mac_128 = variants.Aegis256Mac_128;
+    };
+    pub const cmac = @import("crypto/cmac.zig");
 };
 
 /// Core functions, that should rarely be used directly by applications.
 pub const core = struct {
     pub const aes = @import("crypto/aes.zig");
-    pub const Gimli = @import("crypto/gimli.zig").State;
+    pub const keccak = @import("crypto/keccak_p.zig");
+
+    pub const Ascon = @import("crypto/ascon.zig").State;
 
     /// Modes are generic compositions to construct encryption/decryption functions from block ciphers and permutations.
     ///
@@ -57,23 +97,32 @@ pub const dh = struct {
     pub const X25519 = @import("crypto/25519/x25519.zig").X25519;
 };
 
+/// Key Encapsulation Mechanisms.
+pub const kem = struct {
+    pub const kyber_d00 = @import("crypto/ml_kem.zig").d00;
+    pub const ml_kem = @import("crypto/ml_kem.zig").nist;
+    pub const ml_kem_01 = @compileError("deprecated: final version of the specification has been published, use ml_kem instead");
+};
+
 /// Elliptic-curve arithmetic.
 pub const ecc = struct {
     pub const Curve25519 = @import("crypto/25519/curve25519.zig").Curve25519;
     pub const Edwards25519 = @import("crypto/25519/edwards25519.zig").Edwards25519;
     pub const P256 = @import("crypto/pcurves/p256.zig").P256;
+    pub const P384 = @import("crypto/pcurves/p384.zig").P384;
     pub const Ristretto255 = @import("crypto/25519/ristretto255.zig").Ristretto255;
+    pub const Secp256k1 = @import("crypto/pcurves/secp256k1.zig").Secp256k1;
 };
 
 /// Hash functions.
 pub const hash = struct {
     pub const blake2 = @import("crypto/blake2.zig");
     pub const Blake3 = @import("crypto/blake3.zig").Blake3;
-    pub const Gimli = @import("crypto/gimli.zig").Hash;
     pub const Md5 = @import("crypto/md5.zig").Md5;
     pub const Sha1 = @import("crypto/sha1.zig").Sha1;
     pub const sha2 = @import("crypto/sha2.zig");
     pub const sha3 = @import("crypto/sha3.zig");
+    pub const composition = @import("crypto/hash_composition.zig");
 };
 
 /// Key derivation functions.
@@ -83,7 +132,8 @@ pub const kdf = struct {
 
 /// MAC functions requiring single-use secret keys.
 pub const onetimeauth = struct {
-    pub const Ghash = @import("crypto/ghash.zig").Ghash;
+    pub const Ghash = @import("crypto/ghash_polyval.zig").Ghash;
+    pub const Polyval = @import("crypto/ghash_polyval.zig").Polyval;
     pub const Poly1305 = @import("crypto/poly1305.zig").Poly1305;
 };
 
@@ -108,20 +158,23 @@ pub const pwhash = struct {
         phc,
         crypt,
     };
-    pub const KdfError = errors.Error || std.mem.Allocator.Error;
-    pub const HasherError = KdfError || phc_format.Error;
+
     pub const Error = HasherError || error{AllocatorRequired};
+    pub const HasherError = KdfError || phc_format.Error;
+    pub const KdfError = errors.Error || std.mem.Allocator.Error || std.Thread.SpawnError;
 
-    pub const phc_format = @import("crypto/phc_encoding.zig");
-
+    pub const argon2 = @import("crypto/argon2.zig");
     pub const bcrypt = @import("crypto/bcrypt.zig");
     pub const scrypt = @import("crypto/scrypt.zig");
     pub const pbkdf2 = @import("crypto/pbkdf2.zig").pbkdf2;
+
+    pub const phc_format = @import("crypto/phc_encoding.zig");
 };
 
 /// Digital signature functions.
 pub const sign = struct {
     pub const Ed25519 = @import("crypto/25519/ed25519.zig").Ed25519;
+    pub const ecdsa = @import("crypto/ecdsa.zig");
 };
 
 /// Stream ciphers. These do not provide any kind of authentication.
@@ -140,6 +193,8 @@ pub const stream = struct {
     };
 
     pub const salsa = struct {
+        pub const Salsa = @import("crypto/salsa20.zig").Salsa;
+        pub const XSalsa = @import("crypto/salsa20.zig").XSalsa;
         pub const Salsa20 = @import("crypto/salsa20.zig").Salsa20;
         pub const XSalsa20 = @import("crypto/salsa20.zig").XSalsa20;
     };
@@ -153,40 +208,132 @@ pub const nacl = struct {
     pub const SealedBox = salsa20.SealedBox;
 };
 
-pub const utils = @import("crypto/utils.zig");
+/// Finite-field arithmetic.
+pub const ff = @import("crypto/ff.zig");
 
 /// This is a thread-local, cryptographically secure pseudo random number generator.
-pub const random = &@import("crypto/tlcsprng.zig").interface;
+pub const random = @import("crypto/tlcsprng.zig").interface;
 
 const std = @import("std.zig");
 
 pub const errors = @import("crypto/errors.zig");
 
-test "crypto" {
-    const please_windows_dont_oom = @import("builtin").os.tag == .windows;
-    if (please_windows_dont_oom) return error.SkipZigTest;
+pub const tls = @import("crypto/tls.zig");
+pub const Certificate = @import("crypto/Certificate.zig");
 
-    inline for (std.meta.declarations(@This())) |decl| {
-        switch (decl.data) {
-            .Type => |t| {
-                if (@typeInfo(t) != .ErrorSet) {
-                    std.testing.refAllDecls(t);
-                }
-            },
-            .Var => |v| {
-                _ = v;
-            },
-            .Fn => |f| {
-                _ = f;
-            },
-        }
-    }
+/// Side-channels mitigations.
+pub const SideChannelsMitigations = enum {
+    /// No additional side-channel mitigations are applied.
+    /// This is the fastest mode.
+    none,
+    /// The `basic` mode protects against most practical attacks, provided that the
+    /// application or implements proper defenses against brute-force attacks.
+    /// It offers a good balance between performance and security.
+    basic,
+    /// The `medium` mode offers increased resilience against side-channel attacks,
+    /// making most attacks unpractical even on shared/low latency environements.
+    /// This is the default mode.
+    medium,
+    /// The `full` mode offers the highest level of protection against side-channel attacks.
+    /// Note that this doesn't cover all possible attacks (especially power analysis or
+    /// thread-local attacks such as cachebleed), and that the performance impact is significant.
+    full,
+};
 
-    _ = @import("crypto/aegis.zig");
-    _ = @import("crypto/aes_gcm.zig");
-    _ = @import("crypto/aes_ocb.zig");
-    _ = @import("crypto/blake2.zig");
-    _ = @import("crypto/chacha20.zig");
+pub const default_side_channels_mitigations = .medium;
+
+test {
+    _ = aead.aegis.Aegis128L;
+    _ = aead.aegis.Aegis256;
+
+    _ = aead.aes_gcm.Aes128Gcm;
+    _ = aead.aes_gcm.Aes256Gcm;
+
+    _ = aead.aes_ocb.Aes128Ocb;
+    _ = aead.aes_ocb.Aes256Ocb;
+
+    _ = aead.chacha_poly.ChaCha20Poly1305;
+    _ = aead.chacha_poly.ChaCha12Poly1305;
+    _ = aead.chacha_poly.ChaCha8Poly1305;
+    _ = aead.chacha_poly.XChaCha20Poly1305;
+    _ = aead.chacha_poly.XChaCha12Poly1305;
+    _ = aead.chacha_poly.XChaCha8Poly1305;
+
+    _ = aead.isap;
+    _ = aead.salsa_poly.XSalsa20Poly1305;
+
+    _ = auth.hmac;
+    _ = auth.cmac;
+    _ = auth.siphash;
+
+    _ = core.aes;
+    _ = core.Ascon;
+    _ = core.modes;
+
+    _ = dh.X25519;
+
+    _ = kem.kyber_d00;
+
+    _ = ecc.Curve25519;
+    _ = ecc.Edwards25519;
+    _ = ecc.P256;
+    _ = ecc.P384;
+    _ = ecc.Ristretto255;
+    _ = ecc.Secp256k1;
+
+    _ = hash.blake2;
+    _ = hash.Blake3;
+    _ = hash.Md5;
+    _ = hash.Sha1;
+    _ = hash.sha2;
+    _ = hash.sha3;
+    _ = hash.composition;
+
+    _ = kdf.hkdf;
+
+    _ = onetimeauth.Ghash;
+    _ = onetimeauth.Poly1305;
+
+    _ = pwhash.Encoding;
+
+    _ = pwhash.Error;
+    _ = pwhash.HasherError;
+    _ = pwhash.KdfError;
+
+    _ = pwhash.argon2;
+    _ = pwhash.bcrypt;
+    _ = pwhash.scrypt;
+    _ = pwhash.pbkdf2;
+
+    _ = pwhash.phc_format;
+
+    _ = sign.Ed25519;
+    _ = sign.ecdsa;
+
+    _ = stream.chacha.ChaCha20IETF;
+    _ = stream.chacha.ChaCha12IETF;
+    _ = stream.chacha.ChaCha8IETF;
+    _ = stream.chacha.ChaCha20With64BitNonce;
+    _ = stream.chacha.ChaCha12With64BitNonce;
+    _ = stream.chacha.ChaCha8With64BitNonce;
+    _ = stream.chacha.XChaCha20IETF;
+    _ = stream.chacha.XChaCha12IETF;
+    _ = stream.chacha.XChaCha8IETF;
+
+    _ = stream.salsa.Salsa20;
+    _ = stream.salsa.XSalsa20;
+
+    _ = nacl.Box;
+    _ = nacl.SecretBox;
+    _ = nacl.SealedBox;
+
+    _ = secureZero;
+    _ = timing_safe;
+    _ = ff;
+    _ = random;
+    _ = errors;
+    _ = tls;
+    _ = Certificate;
 }
 
 test "CSPRNG" {
@@ -215,7 +362,6 @@ test "issue #4532: no index out of bounds" {
         hash.blake2.Blake2b256,
         hash.blake2.Blake2b384,
         hash.blake2.Blake2b512,
-        hash.Gimli,
     };
 
     inline for (types) |Hasher| {
@@ -234,3 +380,36 @@ test "issue #4532: no index out of bounds" {
         try std.testing.expectEqual(out1, out2);
     }
 }
+
+/// Sets a slice to zeroes.
+/// Prevents the store from being optimized out.
+pub inline fn secureZero(comptime T: type, s: []volatile T) void {
+    @memset(s, 0);
+}
+
+test secureZero {
+    var a = [_]u8{0xfe} ** 8;
+    var b = [_]u8{0xfe} ** 8;
+
+    @memset(&a, 0);
+    secureZero(u8, &b);
+
+    try std.testing.expectEqualSlices(u8, &a, &b);
+}
+
+/// Deprecated in favor of `std.crypto`. To be removed after Zig 0.14.0 is released.
+///
+/// As a reminder, never use "utils" in a namespace (in any programming language).
+/// https://ziglang.org/documentation/0.13.0/#Avoid-Redundancy-in-Names
+pub const utils = struct {
+    /// Deprecated in favor of `std.crypto.secureZero`.
+    pub const secureZero = std.crypto.secureZero;
+    /// Deprecated in favor of `std.crypto.timing_safe.eql`.
+    pub const timingSafeEql = timing_safe.eql;
+    /// Deprecated in favor of `std.crypto.timing_safe.compare`.
+    pub const timingSafeCompare = timing_safe.compare;
+    /// Deprecated in favor of `std.crypto.timing_safe.add`.
+    pub const timingSafeAdd = timing_safe.add;
+    /// Deprecated in favor of `std.crypto.timing_safe.sub`.
+    pub const timingSafeSub = timing_safe.sub;
+};

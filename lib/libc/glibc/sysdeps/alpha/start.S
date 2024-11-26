@@ -1,7 +1,6 @@
 /* Startup code for Alpha/ELF.
-   Copyright (C) 1993-2020 Free Software Foundation, Inc.
+   Copyright (C) 1993-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
-   Contributed by Richard Henderson <rth@tamu.edu>
 
    The GNU C Library is free software; you can redistribute it and/or
    modify it under the terms of the GNU Lesser General Public
@@ -55,9 +54,8 @@ _start:
 	ldl	a1, 16(sp)	/* get argc */
 	lda	a2, 24(sp)	/* get argv */
 
-  /* Load address of our own entry points to .fini and .init.  */
-	lda	a3, __libc_csu_init
-	lda	a4, __libc_csu_fini
+	mov	$r31, a3 	/* Used to be init.  */
+	mov	$r31, a4 	/* Used to be fini.  */
 
   /* Store address of the shared library termination function.  */
 	mov	v0, a5

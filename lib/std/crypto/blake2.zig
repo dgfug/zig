@@ -76,24 +76,24 @@ pub fn Blake2s(comptime out_bits: usize) type {
             comptime debug.assert(8 <= out_bits and out_bits <= 256);
 
             var d: Self = undefined;
-            mem.copy(u32, d.h[0..], iv[0..]);
+            d.h = iv;
 
             const key_len = if (options.key) |key| key.len else 0;
             // default parameters
-            d.h[0] ^= 0x01010000 ^ @truncate(u32, key_len << 8) ^ @intCast(u32, options.expected_out_bits >> 3);
+            d.h[0] ^= 0x01010000 ^ @as(u32, @truncate(key_len << 8)) ^ @as(u32, @intCast(options.expected_out_bits >> 3));
             d.t = 0;
             d.buf_len = 0;
 
             if (options.salt) |salt| {
-                d.h[4] ^= mem.readIntLittle(u32, salt[0..4]);
-                d.h[5] ^= mem.readIntLittle(u32, salt[4..8]);
+                d.h[4] ^= mem.readInt(u32, salt[0..4], .little);
+                d.h[5] ^= mem.readInt(u32, salt[4..8], .little);
             }
             if (options.context) |context| {
-                d.h[6] ^= mem.readIntLittle(u32, context[0..4]);
-                d.h[7] ^= mem.readIntLittle(u32, context[4..8]);
+                d.h[6] ^= mem.readInt(u32, context[0..4], .little);
+                d.h[7] ^= mem.readInt(u32, context[4..8], .little);
             }
             if (key_len > 0) {
-                mem.set(u8, d.buf[key_len..], 0);
+                @memset(d.buf[key_len..], 0);
                 d.update(options.key.?);
                 d.buf_len = 64;
             }
@@ -112,7 +112,7 @@ pub fn Blake2s(comptime out_bits: usize) type {
             // Partial buffer exists from previous update. Copy into buffer then hash.
             if (d.buf_len != 0 and d.buf_len + b.len > 64) {
                 off += 64 - d.buf_len;
-                mem.copy(u8, d.buf[d.buf_len..], b[0..off]);
+                @memcpy(d.buf[d.buf_len..][0..off], b[0..off]);
                 d.t += 64;
                 d.round(d.buf[0..], false);
                 d.buf_len = 0;
@@ -125,24 +125,25 @@ pub fn Blake2s(comptime out_bits: usize) type {
             }
 
             // Copy any remainder for next pass.
-            mem.copy(u8, d.buf[d.buf_len..], b[off..]);
-            d.buf_len += @intCast(u8, b[off..].len);
+            const b_slice = b[off..];
+            @memcpy(d.buf[d.buf_len..][0..b_slice.len], b_slice);
+            d.buf_len += @as(u8, @intCast(b_slice.len));
         }
 
         pub fn final(d: *Self, out: *[digest_length]u8) void {
-            mem.set(u8, d.buf[d.buf_len..], 0);
+            @memset(d.buf[d.buf_len..], 0);
             d.t += d.buf_len;
             d.round(d.buf[0..], true);
-            for (d.h) |*x| x.* = mem.nativeToLittle(u32, x.*);
-            mem.copy(u8, out[0..], @ptrCast(*[digest_length]u8, &d.h));
+            for (&d.h) |*x| x.* = mem.nativeToLittle(u32, x.*);
+            out.* = @as(*[digest_length]u8, @ptrCast(&d.h)).*;
         }
 
         fn round(d: *Self, b: *const [64]u8, last: bool) void {
             var m: [16]u32 = undefined;
             var v: [16]u32 = undefined;
 
-            for (m) |*r, i| {
-                r.* = mem.readIntLittle(u32, b[4 * i ..][0..4]);
+            for (&m, 0..) |*r, i| {
+                r.* = mem.readInt(u32, b[4 * i ..][0..4], .little);
             }
 
             var k: usize = 0;
@@ -151,8 +152,8 @@ pub fn Blake2s(comptime out_bits: usize) type {
                 v[k + 8] = iv[k];
             }
 
-            v[12] ^= @truncate(u32, d.t);
-            v[13] ^= @intCast(u32, d.t >> 32);
+            v[12] ^= @as(u32, @truncate(d.t));
+            v[13] ^= @as(u32, @intCast(d.t >> 32));
             if (last) v[14] = ~v[14];
 
             const rounds = comptime [_]RoundParam{
@@ -180,9 +181,21 @@ pub fn Blake2s(comptime out_bits: usize) type {
                 }
             }
 
-            for (d.h) |*r, i| {
+            for (&d.h, 0..) |*r, i| {
                 r.* ^= v[i] ^ v[i + 8];
             }
+        }
+
+        pub const Error = error{};
+        pub const Writer = std.io.Writer(*Self, Error, write);
+
+        fn write(self: *Self, bytes: []const u8) Error!usize {
+            self.update(bytes);
+            return bytes.len;
+        }
+
+        pub fn writer(self: *Self) Writer {
+            return .{ .context = self };
         }
     };
 }
@@ -499,7 +512,7 @@ pub fn Blake2b(comptime out_bits: usize) type {
             comptime debug.assert(8 <= out_bits and out_bits <= 512);
 
             var d: Self = undefined;
-            mem.copy(u64, d.h[0..], iv[0..]);
+            d.h = iv;
 
             const key_len = if (options.key) |key| key.len else 0;
             // default parameters
@@ -508,15 +521,15 @@ pub fn Blake2b(comptime out_bits: usize) type {
             d.buf_len = 0;
 
             if (options.salt) |salt| {
-                d.h[4] ^= mem.readIntLittle(u64, salt[0..8]);
-                d.h[5] ^= mem.readIntLittle(u64, salt[8..16]);
+                d.h[4] ^= mem.readInt(u64, salt[0..8], .little);
+                d.h[5] ^= mem.readInt(u64, salt[8..16], .little);
             }
             if (options.context) |context| {
-                d.h[6] ^= mem.readIntLittle(u64, context[0..8]);
-                d.h[7] ^= mem.readIntLittle(u64, context[8..16]);
+                d.h[6] ^= mem.readInt(u64, context[0..8], .little);
+                d.h[7] ^= mem.readInt(u64, context[8..16], .little);
             }
             if (key_len > 0) {
-                mem.set(u8, d.buf[key_len..], 0);
+                @memset(d.buf[key_len..], 0);
                 d.update(options.key.?);
                 d.buf_len = 128;
             }
@@ -535,7 +548,7 @@ pub fn Blake2b(comptime out_bits: usize) type {
             // Partial buffer exists from previous update. Copy into buffer then hash.
             if (d.buf_len != 0 and d.buf_len + b.len > 128) {
                 off += 128 - d.buf_len;
-                mem.copy(u8, d.buf[d.buf_len..], b[0..off]);
+                @memcpy(d.buf[d.buf_len..][0..off], b[0..off]);
                 d.t += 128;
                 d.round(d.buf[0..], false);
                 d.buf_len = 0;
@@ -548,24 +561,25 @@ pub fn Blake2b(comptime out_bits: usize) type {
             }
 
             // Copy any remainder for next pass.
-            mem.copy(u8, d.buf[d.buf_len..], b[off..]);
-            d.buf_len += @intCast(u8, b[off..].len);
+            const b_slice = b[off..];
+            @memcpy(d.buf[d.buf_len..][0..b_slice.len], b_slice);
+            d.buf_len += @as(u8, @intCast(b_slice.len));
         }
 
         pub fn final(d: *Self, out: *[digest_length]u8) void {
-            mem.set(u8, d.buf[d.buf_len..], 0);
+            @memset(d.buf[d.buf_len..], 0);
             d.t += d.buf_len;
             d.round(d.buf[0..], true);
-            for (d.h) |*x| x.* = mem.nativeToLittle(u64, x.*);
-            mem.copy(u8, out[0..], @ptrCast(*[digest_length]u8, &d.h));
+            for (&d.h) |*x| x.* = mem.nativeToLittle(u64, x.*);
+            out.* = @as(*[digest_length]u8, @ptrCast(&d.h)).*;
         }
 
         fn round(d: *Self, b: *const [128]u8, last: bool) void {
             var m: [16]u64 = undefined;
             var v: [16]u64 = undefined;
 
-            for (m) |*r, i| {
-                r.* = mem.readIntLittle(u64, b[8 * i ..][0..8]);
+            for (&m, 0..) |*r, i| {
+                r.* = mem.readInt(u64, b[8 * i ..][0..8], .little);
             }
 
             var k: usize = 0;
@@ -574,8 +588,8 @@ pub fn Blake2b(comptime out_bits: usize) type {
                 v[k + 8] = iv[k];
             }
 
-            v[12] ^= @truncate(u64, d.t);
-            v[13] ^= @intCast(u64, d.t >> 64);
+            v[12] ^= @as(u64, @truncate(d.t));
+            v[13] ^= @as(u64, @intCast(d.t >> 64));
             if (last) v[14] = ~v[14];
 
             const rounds = comptime [_]RoundParam{
@@ -603,7 +617,7 @@ pub fn Blake2b(comptime out_bits: usize) type {
                 }
             }
 
-            for (d.h) |*r, i| {
+            for (&d.h, 0..) |*r, i| {
                 r.* ^= v[i] ^ v[i + 8];
             }
         }
@@ -772,7 +786,7 @@ test "blake2b384 streaming" {
 
 test "comptime blake2b384" {
     comptime {
-        @setEvalBranchQuota(10000);
+        @setEvalBranchQuota(20000);
         var block = [_]u8{0} ** Blake2b384.block_length;
         var out: [Blake2b384.digest_length]u8 = undefined;
 
@@ -864,7 +878,7 @@ test "blake2b512 keyed" {
 
 test "comptime blake2b512" {
     comptime {
-        @setEvalBranchQuota(10000);
+        @setEvalBranchQuota(12000);
         var block = [_]u8{0} ** Blake2b512.block_length;
         var out: [Blake2b512.digest_length]u8 = undefined;
 

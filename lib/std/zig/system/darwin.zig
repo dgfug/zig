@@ -2,38 +2,65 @@ const std = @import("std");
 const mem = std.mem;
 const Allocator = mem.Allocator;
 const Target = std.Target;
+const Version = std.SemanticVersion;
 
 pub const macos = @import("darwin/macos.zig");
 
-/// Detect SDK path on Darwin.
-/// Calls `xcrun --sdk <target_sdk> --show-sdk-path` which result can be used to specify
-/// `--sysroot` of the compiler.
-/// The caller needs to free the resulting path slice.
-pub fn getSDKPath(allocator: *Allocator, target: Target) !?[]u8 {
-    const is_simulator_abi = target.abi == .simulator;
-    const sdk = switch (target.os.tag) {
-        .macos => "macosx",
-        .ios => if (is_simulator_abi) "iphonesimulator" else "iphoneos",
-        .watchos => if (is_simulator_abi) "watchsimulator" else "watchos",
-        .tvos => if (is_simulator_abi) "appletvsimulator" else "appletvos",
-        else => return null,
-    };
+/// Check if SDK is installed on Darwin without triggering CLT installation popup window.
+/// Note: simply invoking `xcrun` will inevitably trigger the CLT installation popup.
+/// Therefore, we resort to invoking `xcode-select --print-path` and checking
+/// if the status is nonzero.
+/// stderr from xcode-select is ignored.
+/// If error.OutOfMemory occurs in Allocator, this function returns null.
+pub fn isSdkInstalled(allocator: Allocator) bool {
+    const result = std.process.Child.run(.{
+        .allocator = allocator,
+        .argv = &.{ "/usr/bin/xcode-select", "--print-path" },
+    }) catch return false;
 
-    const argv = &[_][]const u8{ "xcrun", "--sdk", sdk, "--show-sdk-path" };
-    const result = try std.ChildProcess.exec(.{ .allocator = allocator, .argv = argv });
     defer {
         allocator.free(result.stderr);
         allocator.free(result.stdout);
     }
-    if (result.stderr.len != 0 or result.term.Exited != 0) {
-        // We don't actually care if there were errors as this is best-effort check anyhow
-        // and in the worst case the user can specify the sysroot manually.
-        return null;
-    }
-    const sysroot = try allocator.dupe(u8, mem.trimRight(u8, result.stdout, "\r\n"));
-    return sysroot;
+
+    return switch (result.term) {
+        .Exited => |code| if (code == 0) result.stdout.len > 0 else false,
+        else => false,
+    };
 }
 
-test "" {
-    _ = @import("darwin/macos.zig");
+/// Detect SDK on Darwin.
+/// Calls `xcrun --sdk <target_sdk> --show-sdk-path` which fetches the path to the SDK.
+/// Caller owns the memory.
+/// stderr from xcrun is ignored.
+/// If error.OutOfMemory occurs in Allocator, this function returns null.
+pub fn getSdk(allocator: Allocator, target: Target) ?[]const u8 {
+    const is_simulator_abi = target.abi == .simulator;
+    const sdk = switch (target.os.tag) {
+        .macos => "macosx",
+        .ios => switch (target.abi) {
+            .simulator => "iphonesimulator",
+            .macabi => "macosx",
+            else => "iphoneos",
+        },
+        .watchos => if (is_simulator_abi) "watchsimulator" else "watchos",
+        .tvos => if (is_simulator_abi) "appletvsimulator" else "appletvos",
+        .visionos => if (is_simulator_abi) "xrsimulator" else "xros",
+        else => return null,
+    };
+    const argv = &[_][]const u8{ "/usr/bin/xcrun", "--sdk", sdk, "--show-sdk-path" };
+    const result = std.process.Child.run(.{ .allocator = allocator, .argv = argv }) catch return null;
+    defer {
+        allocator.free(result.stderr);
+        allocator.free(result.stdout);
+    }
+    switch (result.term) {
+        .Exited => |code| if (code != 0) return null,
+        else => return null,
+    }
+    return allocator.dupe(u8, mem.trimRight(u8, result.stdout, "\r\n")) catch null;
+}
+
+test {
+    _ = macos;
 }

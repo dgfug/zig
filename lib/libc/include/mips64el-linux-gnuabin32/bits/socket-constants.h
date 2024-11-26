@@ -1,5 +1,5 @@
 /* Socket constants which vary among Linux architectures.  Version for MIPS.
-   Copyright (C) 2019-2021 Free Software Foundation, Inc.
+   Copyright (C) 2019-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -30,9 +30,41 @@
 #define SO_OOBINLINE 256
 #define SO_RCVBUF 4098
 #define SO_RCVLOWAT 4100
-#define SO_RCVTIMEO 4102
 #define SO_REUSEADDR 4
 #define SO_SNDBUF 4097
 #define SO_SNDLOWAT 4099
-#define SO_SNDTIMEO 4101
 #define SO_TYPE 4104
+
+#if __TIMESIZE == 64
+# define SO_RCVTIMEO 4102
+# define SO_SNDTIMEO 4101
+# define SO_TIMESTAMP 29
+# define SO_TIMESTAMPNS 35
+# define SO_TIMESTAMPING 37
+#else
+# define SO_RCVTIMEO_OLD 4102
+# define SO_SNDTIMEO_OLD 4101
+# define SO_RCVTIMEO_NEW 66
+# define SO_SNDTIMEO_NEW 67
+
+# define SO_TIMESTAMP_OLD 29
+# define SO_TIMESTAMPNS_OLD 35
+# define SO_TIMESTAMPING_OLD 37
+# define SO_TIMESTAMP_NEW 63
+# define SO_TIMESTAMPNS_NEW 64
+# define SO_TIMESTAMPING_NEW 65
+
+# ifdef __USE_TIME64_REDIRECTS
+#  define SO_RCVTIMEO SO_RCVTIMEO_NEW
+#  define SO_SNDTIMEO SO_SNDTIMEO_NEW
+#  define SO_TIMESTAMP SO_TIMESTAMP_NEW
+#  define SO_TIMESTAMPNS SO_TIMESTAMPNS_NEW
+#  define SO_TIMESTAMPING SO_TIMESTAMPING_NEW
+# else
+#  define SO_RCVTIMEO SO_RCVTIMEO_OLD
+#  define SO_SNDTIMEO SO_SNDTIMEO_OLD
+#  define SO_TIMESTAMP SO_TIMESTAMP_OLD
+#  define SO_TIMESTAMPNS SO_TIMESTAMPNS_OLD
+#  define SO_TIMESTAMPING SO_TIMESTAMPING_OLD
+# endif
+#endif

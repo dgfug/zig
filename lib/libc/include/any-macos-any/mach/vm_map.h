@@ -25,7 +25,10 @@
 #ifdef __cplusplus
 extern "C" {
 #endif
-	extern int mig_strncpy_zerofill(char *dest, const char *src, int len) __attribute__((weak_import));
+#ifndef __MIG_STRNCPY_ZEROFILL_FORWARD_TYPE_DECLS_CSTRING_ATTR
+#define __MIG_STRNCPY_ZEROFILL_FORWARD_TYPE_DECLS_CSTRING_COUNTEDBY_ATTR(C) __unsafe_indexable
+#endif
+	extern int mig_strncpy_zerofill(char * dest, const char * src, int len) __attribute__((weak_import));
 #ifdef __cplusplus
 }
 #endif
@@ -41,7 +44,7 @@ extern "C" {
 #define FUNCTION_PTR_T
 typedef void (*function_ptr_t)(mach_port_t, char *, mach_msg_type_number_t);
 typedef struct {
-        char            *name;
+        char            * name;
         function_ptr_t  function;
 } function_table_entry;
 typedef function_table_entry   *function_table_t;
@@ -52,6 +55,7 @@ typedef function_table_entry   *function_table_t;
 #define	vm_map_MSG_COUNT	33
 #endif	/* vm_map_MSG_COUNT */
 
+#include <Availability.h>
 #include <mach/std_types.h>
 #include <mach/mig.h>
 #include <mach/mig.h>
@@ -74,7 +78,7 @@ extern
 #endif	/* mig_external */
 kern_return_t vm_region
 (
-	vm_map_t target_task,
+	vm_map_read_t target_task,
 	vm_address_t *address,
 	vm_size_t *size,
 	vm_region_flavor_t flavor,
@@ -147,7 +151,7 @@ extern
 #endif	/* mig_external */
 kern_return_t vm_read
 (
-	vm_map_t target_task,
+	vm_map_read_t target_task,
 	vm_address_t address,
 	vm_size_t size,
 	vm_offset_t *data,
@@ -162,7 +166,7 @@ extern
 #endif	/* mig_external */
 kern_return_t vm_read_list
 (
-	vm_map_t target_task,
+	vm_map_read_t target_task,
 	vm_read_entry_t data_list,
 	natural_t count
 );
@@ -203,7 +207,7 @@ extern
 #endif	/* mig_external */
 kern_return_t vm_read_overwrite
 (
-	vm_map_t target_task,
+	vm_map_read_t target_task,
 	vm_address_t address,
 	vm_size_t size,
 	vm_address_t data,
@@ -301,8 +305,7 @@ mig_external
 #else
 extern
 #endif	/* mig_external */
-__WATCHOS_PROHIBITED
-__TVOS_PROHIBITED
+__TVOS_PROHIBITED __WATCHOS_PROHIBITED
 kern_return_t task_wire
 (
 	vm_map_t target_task,
@@ -333,7 +336,7 @@ extern
 #endif	/* mig_external */
 kern_return_t vm_map_page_query
 (
-	vm_map_t target_map,
+	vm_map_read_t target_map,
 	vm_offset_t offset,
 	integer_t *disposition,
 	integer_t *ref_count
@@ -347,7 +350,7 @@ extern
 #endif	/* mig_external */
 kern_return_t mach_vm_region_info
 (
-	vm_map_t task,
+	vm_map_read_t task,
 	vm_address_t address,
 	vm_info_region_t *region,
 	vm_info_object_array_t *objects,
@@ -362,7 +365,7 @@ extern
 #endif	/* mig_external */
 kern_return_t vm_mapped_pages_info
 (
-	vm_map_t task,
+	vm_map_read_t task,
 	page_address_array_t *pages,
 	mach_msg_type_number_t *pagesCnt
 );
@@ -375,7 +378,7 @@ extern
 #endif	/* mig_external */
 kern_return_t vm_region_recurse
 (
-	vm_map_t target_task,
+	vm_map_read_t target_task,
 	vm_address_t *address,
 	vm_size_t *size,
 	natural_t *nesting_depth,
@@ -391,7 +394,7 @@ extern
 #endif	/* mig_external */
 kern_return_t vm_region_recurse_64
 (
-	vm_map_t target_task,
+	vm_map_read_t target_task,
 	vm_address_t *address,
 	vm_size_t *size,
 	natural_t *nesting_depth,
@@ -407,7 +410,7 @@ extern
 #endif	/* mig_external */
 kern_return_t mach_vm_region_info_64
 (
-	vm_map_t task,
+	vm_map_read_t task,
 	vm_address_t address,
 	vm_info_region_64_t *region,
 	vm_info_object_array_t *objects,
@@ -422,7 +425,7 @@ extern
 #endif	/* mig_external */
 kern_return_t vm_region_64
 (
-	vm_map_t target_task,
+	vm_map_read_t target_task,
 	vm_address_t *address,
 	vm_size_t *size,
 	vm_region_flavor_t flavor,

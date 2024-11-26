@@ -1,16 +1,19 @@
-const Builder = @import("std").build.Builder;
+const std = @import("std");
 
-pub fn build(b: *Builder) void {
-    const exe = b.addExecutable("test", "test.zig");
-    exe.addPackagePath("my_pkg", "pkg.zig");
-
-    // This is duplicated to test that you are allowed to call
-    // b.standardReleaseOptions() twice.
-    exe.setBuildMode(b.standardReleaseOptions());
-    exe.setBuildMode(b.standardReleaseOptions());
-
-    const run = exe.run();
-
+pub fn build(b: *std.Build) void {
     const test_step = b.step("test", "Test it");
+    b.default_step = test_step;
+
+    const optimize: std.builtin.OptimizeMode = .Debug;
+
+    const exe = b.addExecutable(.{
+        .name = "test",
+        .root_source_file = b.path("test.zig"),
+        .optimize = optimize,
+        .target = b.graph.host,
+    });
+    exe.root_module.addAnonymousImport("my_pkg", .{ .root_source_file = b.path("pkg.zig") });
+
+    const run = b.addRunArtifact(exe);
     test_step.dependOn(&run.step);
 }

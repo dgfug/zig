@@ -5,18 +5,17 @@ const cmath = math.complex;
 const Complex = cmath.Complex;
 
 /// Returns the cosine of z.
-pub fn cos(z: anytype) Complex(@TypeOf(z.re)) {
-    const T = @TypeOf(z.re);
+pub fn cos(z: anytype) Complex(@TypeOf(z.re, z.im)) {
+    const T = @TypeOf(z.re, z.im);
     const p = Complex(T).init(-z.im, z.re);
     return cmath.cosh(p);
 }
 
-const epsilon = 0.0001;
-
-test "complex.ccos" {
+test cos {
+    const epsilon = math.floatEps(f32);
     const a = Complex(f32).init(5, 3);
     const c = cos(a);
 
-    try testing.expect(math.approxEqAbs(f32, c.re, 2.855815, epsilon));
-    try testing.expect(math.approxEqAbs(f32, c.im, 9.606383, epsilon));
+    try testing.expectApproxEqAbs(2.8558152, c.re, epsilon);
+    try testing.expectApproxEqAbs(9.606383, c.im, epsilon);
 }

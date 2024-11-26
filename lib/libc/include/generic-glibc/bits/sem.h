@@ -1,4 +1,4 @@
-/* Copyright (C) 1995-2021 Free Software Foundation, Inc.
+/* Copyright (C) 1995-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -22,6 +22,7 @@
 #include <sys/types.h>
 #include <bits/timesize.h>
 #include <bits/types/struct_semid_ds.h>
+#include <bits/types/struct_semid64_ds.h>
 
 /* Flags for `semop'.  */
 #define SEM_UNDO	0x1000		/* undo the operation on exit */

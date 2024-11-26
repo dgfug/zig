@@ -39,8 +39,11 @@ pub const Curve25519 = struct {
         }
     }
 
-    /// Multiply a point by the cofactor
-    pub const clearCofactor = @compileError("TODO what was this function supposed to do? it didn't compile successfully");
+    /// Multiply a point by the cofactor, returning WeakPublicKey if the element is in a small-order group.
+    pub fn clearCofactor(p: Curve25519) WeakPublicKeyError!Curve25519 {
+        const cofactor = [_]u8{8} ++ [_]u8{0} ** 31;
+        return ladder(p, cofactor, 4) catch return error.WeakPublicKey;
+    }
 
     fn ladder(p: Curve25519, s: [32]u8, comptime bits: usize) IdentityElementError!Curve25519 {
         var x1 = p.x;
@@ -51,7 +54,7 @@ pub const Curve25519 = struct {
         var swap: u8 = 0;
         var pos: usize = bits - 1;
         while (true) : (pos -= 1) {
-            const bit = (s[pos >> 3] >> @truncate(u3, pos)) & 1;
+            const bit = (s[pos >> 3] >> @as(u3, @truncate(pos))) & 1;
             swap ^= bit;
             Fe.cSwap2(&x2, &x3, &z2, &z3, swap);
             swap = bit;
@@ -94,16 +97,24 @@ pub const Curve25519 = struct {
     /// the identity element or error.WeakPublicKey if the public
     /// key is a low-order point.
     pub fn mul(p: Curve25519, s: [32]u8) (IdentityElementError || WeakPublicKeyError)!Curve25519 {
-        const cofactor = [_]u8{8} ++ [_]u8{0} ** 31;
-        _ = ladder(p, cofactor, 4) catch return error.WeakPublicKey;
+        _ = try p.clearCofactor();
         return try ladder(p, s, 256);
     }
 
     /// Compute the Curve25519 equivalent to an Edwards25519 point.
+    ///
+    /// Note that the function doesn't check that the input point is
+    /// on the prime order group, e.g. that it is an Ed25519 public key
+    /// for which an Ed25519 secret key exists.
+    ///
+    /// If this is required, for example for compatibility with libsodium's strict
+    /// validation policy, the caller can call the `rejectUnexpectedSubgroup` function
+    /// on the input point before calling this function.
     pub fn fromEdwards25519(p: crypto.ecc.Edwards25519) IdentityElementError!Curve25519 {
         try p.clearCofactor().rejectIdentity();
         const one = crypto.ecc.Edwards25519.Fe.one;
-        const x = one.add(p.y).mul(one.sub(p.y).invert()); // xMont=(1+yEd)/(1-yEd)
+        const py = p.y.mul(p.z.invert());
+        const x = one.add(py).mul(one.sub(py).invert()); // xMont=(1+yEd)/(1-yEd)
         return Curve25519{ .x = x };
     }
 };
@@ -122,7 +133,19 @@ test "curve25519" {
     try std.testing.expectError(error.NonCanonical, Curve25519.rejectNonCanonical(s));
 }
 
-test "curve25519 small order check" {
+test "non-affine edwards25519 to curve25519 projection" {
+    const skh = "90e7595fc89e52fdfddce9c6a43d74dbf6047025ee0462d2d172e8b6a2841d6e";
+    var sk: [32]u8 = undefined;
+    _ = std.fmt.hexToBytes(&sk, skh) catch unreachable;
+    const edp = try crypto.ecc.Edwards25519.basePoint.mul(sk);
+    const xp = try Curve25519.fromEdwards25519(edp);
+    const expected_hex = "cc4f2cdb695dd766f34118eb67b98652fed1d8bc49c330b119bbfa8a64989378";
+    var expected: [32]u8 = undefined;
+    _ = std.fmt.hexToBytes(&expected, expected_hex) catch unreachable;
+    try std.testing.expectEqualSlices(u8, &xp.toBytes(), &expected);
+}
+
+test "small order check" {
     var s: [32]u8 = [_]u8{1} ++ [_]u8{0} ** 31;
     const small_order_ss: [7][32]u8 = .{
         .{
@@ -148,6 +171,7 @@ test "curve25519 small order check" {
         },
     };
     for (small_order_ss) |small_order_s| {
+        try std.testing.expectError(error.WeakPublicKey, Curve25519.fromBytes(small_order_s).clearCofactor());
         try std.testing.expectError(error.WeakPublicKey, Curve25519.fromBytes(small_order_s).mul(s));
         var extra = small_order_s;
         extra[31] ^= 0x80;

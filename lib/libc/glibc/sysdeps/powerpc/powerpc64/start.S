@@ -1,5 +1,5 @@
 /* Startup code for programs linked with GNU libc.  PowerPC64 version.
-   Copyright (C) 1998-2020 Free Software Foundation, Inc.
+   Copyright (C) 1998-2024 Free Software Foundation, Inc.
    This file is part of the GNU C Library.
 
    The GNU C Library is free software; you can redistribute it and/or
@@ -53,8 +53,8 @@ L(start_addresses):
 	.quad	0 /* was _SDA_BASE_  but not in 64-bit ABI*/
 /*     function descriptors so don't need JUMPTARGET */
 	.quad	main
-	.quad 	__libc_csu_init
-	.quad 	__libc_csu_fini
+	.quad 	0 /* Used to be init.  */
+	.quad 	0 /* Used to be fini.  */
 
 	ASM_SIZE_DIRECTIVE(L(start_addresses))
 
@@ -74,7 +74,8 @@ ENTRY (_start)
 
  /* put the address of start_addresses in r8...  **
 ** PPC64 ABI uses R13 for thread local, so we leave it alone */
-	ld	r8,.L01@toc(r2)
+	addis	r8,r2,.L01@toc@ha
+	ld	r8,.L01@toc@l(r8)
 
  /* and continue in libc-start, in glibc.  */
 	b	JUMPTARGET(__libc_start_main)

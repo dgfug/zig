@@ -25,15 +25,15 @@ fn benchmarkCodepointCount(buf: []const u8) !ResultCount {
     var r: usize = undefined;
     while (i < N) : (i += 1) {
         r = try @call(
-            .{ .modifier = .never_inline },
+            .never_inline,
             std.unicode.utf8CountCodepoints,
             .{buf},
         );
     }
     const end = timer.read();
 
-    const elapsed_s = @intToFloat(f64, end - start) / time.ns_per_s;
-    const throughput = @floatToInt(u64, @intToFloat(f64, bytes) / elapsed_s);
+    const elapsed_s = @as(f64, @floatFromInt(end - start)) / time.ns_per_s;
+    const throughput = @as(u64, @intFromFloat(@as(f64, @floatFromInt(bytes)) / elapsed_s));
 
     return ResultCount{ .count = r, .throughput = throughput };
 }

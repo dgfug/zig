@@ -28,6 +28,7 @@
 #include <Availability.h>
 #include <AvailabilityMacros.h>
 #include <TargetConditionals.h>
+#include <stddef.h>
 #include <sys/types.h>
 
 #ifndef __has_feature
@@ -153,25 +154,7 @@
 /* OBJC_ISA_AVAILABILITY: `isa` will be deprecated or unavailable 
  * in the future */
 #if !defined(OBJC_ISA_AVAILABILITY)
-#   if __OBJC2__
-#       define OBJC_ISA_AVAILABILITY  __attribute__((deprecated))
-#   else
-#       define OBJC_ISA_AVAILABILITY  /* still available */
-#   endif
-#endif
-
-
-/* OBJC2_UNAVAILABLE: unavailable in objc 2.0, deprecated in Leopard */
-#if !defined(OBJC2_UNAVAILABLE)
-#   if __OBJC2__
-#       define OBJC2_UNAVAILABLE UNAVAILABLE_ATTRIBUTE
-#   else
-        /* plain C code also falls here, but this is close enough */
-#       define OBJC2_UNAVAILABLE                                       \
-            __OSX_DEPRECATED(10.5, 10.5, "not available in __OBJC2__") \
-            __IOS_DEPRECATED(2.0, 2.0, "not available in __OBJC2__")   \
-            __TVOS_UNAVAILABLE __WATCHOS_UNAVAILABLE 
-#   endif
+#   define OBJC_ISA_AVAILABILITY  __attribute__((deprecated))
 #endif
 
 /* OBJC_UNAVAILABLE: unavailable, with a message where supported */
@@ -233,9 +216,7 @@
 #endif
 
 #if !defined(OBJC_VISIBLE)
-
 #       define OBJC_VISIBLE  __attribute__((visibility("default")))
-
 #endif
 
 #if !defined(OBJC_EXPORT)
@@ -298,6 +279,25 @@
 #       define OBJC_NORETURN __attribute__((noreturn))
 #   else
 #       define OBJC_NORETURN
+#   endif
+#endif
+
+/* OBJC_NOESCAPE: marks a block as nonescaping */
+#if !defined(OBJC_NOESCAPE)
+#   if __has_attribute(noescape)
+#       define OBJC_NOESCAPE __attribute__((noescape))
+#   else
+#       define OBJC_NOESCAPE
+#   endif
+#endif
+
+/* OBJC_REFINED_FOR_SWIFT: hide the definition from Swift as we have a
+   better one in the overlay */
+#if !defined(OBJC_REFINED_FOR_SWIFT)
+#   if __has_attribute(swift_private)
+#       define OBJC_REFINED_FOR_SWIFT __attribute__((swift_private))
+#   else
+#       define OBJC_REFINED_FOR_SWIFT
 #   endif
 #endif
 
